@@ -136,7 +136,7 @@ function renderRuntimeUrls(){
   const controlUrl=new URL(location.href);
   controlUrl.search="";
   controlUrl.hash="";
-  const displayUrl=new URL("./",controlUrl);
+  const displayUrl=new URL("./display.html",controlUrl);
   if(obsBrowserSourceUrl)obsBrowserSourceUrl.textContent=displayUrl.href;
   if(controlPageUrl)controlPageUrl.textContent=controlUrl.href;
 }

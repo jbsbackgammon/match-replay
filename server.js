@@ -330,7 +330,7 @@ wss.on("connection",socket=>{
 });
 
 server.listen(PORT,"127.0.0.1",()=>{
-  console.log(`Match Replay server: http://localhost:${PORT}/`);
-  console.log(`Control panel:       http://localhost:${PORT}/control.html`);
+  console.log(`Control panel:       http://localhost:${PORT}/`);
+  console.log(`Stream display:      http://localhost:${PORT}/display.html`);
   if(state.matchError) console.log(`Match error: ${state.matchError}`);
 });

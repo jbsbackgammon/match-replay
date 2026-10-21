@@ -316,3 +316,9 @@ button.active .button-ripple{opacity:.25}
   background:repeating-linear-gradient(135deg,#f4f4f4 0 5px,#dedede 5px 10px);
 }
 .design-color-editor.is-invalid #designColorInput{outline:2px solid #b00020;outline-offset:-2px}
+
+/* v101: 操作画面から配信画面を開く */
+.control-header-actions{display:flex;align-items:center;gap:12px}
+.display-link{display:inline-flex;align-items:center;justify-content:center;padding:9px 14px;background:#111;color:#fff;border:2px solid #111;text-decoration:none;font-size:14px;font-weight:900;white-space:nowrap;min-height:38px}
+.display-link:hover,.display-link:focus-visible{background:#fff;color:#111}
+@media(max-width:760px){.control-header{flex-wrap:wrap;gap:8px}.control-header-actions{margin-left:auto}.display-link{font-size:13px;padding:7px 10px}}

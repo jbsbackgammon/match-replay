@@ -3,120 +3,124 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Backgammon Match Replay</title>
-<link rel="stylesheet" href="./styles.css?v=213">
+<title>自動棋譜配信システム</title>
+<link rel="stylesheet" href="./control.css?v=217">
 </head>
 <body>
-<div id="stage-wrap">
-  <main id="stage" aria-label="1920 by 1080 stream layout">
-    <section class="top-area">
-      <div class="headline-row">
-        <div class="headline-name left" id="blackName">柳 暢祐</div>
+<main class="control-shell">
+  <header class="control-header">
+    <h1>自動棋譜配信システム <span>操作画面</span></h1>
+    <div class="control-header-actions">
+      <a class="display-link" href="./display.html" target="_blank" rel="noopener">配信画面を開く ↗</a>
+      <div id="connection" class="connection offline" hidden>DISCONNECTED</div>
+    </div>
+  </header>
 
-        <div class="headline-title-block">
-          <div class="headline-title-main" id="tournamentTitleLine1">JBS第31期名人戦 準々決勝</div>
-        </div>
+  <section class="mode-card">
+    <div class="playback-buttons">
+      <button id="autoNormalModeBtn">等倍 ▶</button>
+      <button id="autoDoubleModeBtn">倍速 ▶</button>
+      <button id="autoTripleModeBtn">3倍 ▶</button>
+      <button id="autoSixModeBtn">6倍 ▶</button>
+      <button id="prevBtn">前へ</button>
+      <button id="nextBtn">次へ</button>
+      <button id="pauseBtn" class="active">停止</button>
+    </div>
+  </section>
 
-        <div class="headline-name right" id="whiteName">平林 直</div>
+  <section class="status-card">
+    <div class="status-summary">
+      <span>位置</span><strong id="stepText">1 / 1</strong>
+      <span class="status-divider">ゲーム</span><strong id="gamePosition">1 / 1</strong>
+      <span class="status-divider">残時間</span><strong id="remainingTime">0:00</strong>
+    </div>
+    <div class="timeline-block">
+      <div class="timeline-wrap">
+        <div id="gameMarkers" class="game-markers"></div>
+        <input id="timeline" type="range" min="0" max="0" step="1" value="0" aria-label="棋譜位置">
       </div>
+    </div>
+    <div class="loaded-file">
+      <span>PAGES MODE</span>
+      <strong id="loadedFileName">未選択</strong>
+    </div>
+  </section>
 
-      <div class="scorebar-row">
-        <div class="score-card">
-          <div class="score-value" id="blackScore">０</div>
-        </div>
-
-        <div class="eval-wrap">
-          <div class="winrate-bar">
-            <div id="winBarBlack" class="winrate-fill black" style="width:50%"></div>
-            <div id="winBarWhite" class="winrate-fill white" style="width:50%"></div>
-            <div id="gammonBarBlack" class="gammon-fill black" style="width:0%"></div>
-            <div id="gammonBarWhite" class="gammon-fill white" style="width:0%"></div>
-            <div id="backgammonBarBlack" class="backgammon-fill black" style="width:0%"></div>
-            <div id="backgammonBarWhite" class="backgammon-fill white" style="width:0%"></div>
-            <div class="bar-stats bar-stats-left">
-              <div id="blackRateText" class="bar-rate">50<span class="bar-rate-percent">%</span></div>
-              <div id="blackGammonText" class="bar-gammon-rate">G 0%</div>
-              <div id="blackBackgammonText" class="bar-backgammon-rate"></div>
-            </div>
-            <div class="bar-stats bar-stats-right">
-              <div id="whiteRateText" class="bar-rate">50<span class="bar-rate-percent">%</span></div>
-              <div id="whiteGammonText" class="bar-gammon-rate">G 0%</div>
-              <div id="whiteBackgammonText" class="bar-backgammon-rate"></div>
-            </div>
-            <div class="winrate-guide" style="left:30%" aria-hidden="true"><span class="guide-spike top"></span><span class="guide-spike bottom"></span></div>
-            <div class="winrate-guide" style="left:50%" aria-hidden="true"><span class="guide-spike top"></span><span class="guide-spike bottom"></span></div>
-            <div class="winrate-guide" style="left:70%" aria-hidden="true"><span class="guide-spike top"></span><span class="guide-spike bottom"></span></div>
-            <div id="bigComebackText" class="big-comeback" aria-hidden="true">大逆転！</div>
-          </div>
-        </div>
-
-        <div class="score-card">
-          <div class="score-value" id="whiteScore">０</div>
-        </div>
-
-        <div class="match-note" id="tournamentTitleLine2">2025-08-30　25ポイントマッチ　勝てばベスト4</div>
+  <section class="meta-card">
+    <div class="match-file-row">
+      <label class="match-file-field">
+        <select id="matchFileSelect" aria-label="棋譜ファイル">
+          <option value="">(未選択)</option>
+        </select>
+      </label>
+      <div class="match-actions">
+        <button id="refreshMatchesBtn">棋譜一覧更新</button>
+        <button id="applyMetaBtn" class="primary">配信画面反映</button>
       </div>
-    </section>
+    </div>
+    <div class="meta-grid">
+      <label>
+        <span>試合名</span>
+        <input id="tournamentLine1Input" type="text" value="">
+      </label>
+      <label>
+        <span>試合補足</span>
+        <input id="tournamentLine2Input" type="text" value="">
+      </label>
+      <label>
+        <span>選手1</span>
+        <input id="blackNameInput" type="text" value="">
+      </label>
+      <label>
+        <span>選手2</span>
+        <input id="whiteNameInput" type="text" value="">
+      </label>
+      <label>
+        <span>テーマカラー</span>
+        <div class="theme-color-input-row">
+          <input id="themeColorInput" type="text" value="#000000" placeholder="#000000" maxlength="7" spellcheck="false">
+          <span id="themeColorSwatch" class="theme-color-swatch" aria-label="入力中のテーマカラー"></span>
+        </div>
+        <div id="themeColorPreview" class="theme-color-preview" aria-label="テーマカラーのプリセット">
+          <button type="button" class="theme-color-button" data-color="#3C3C3C" aria-label="日本 #3C3C3C">日本</button>
+          <button type="button" class="theme-color-button" data-color="#6B0D2F" aria-label="盤聖 #6B0D2F">盤聖</button>
+          <button type="button" class="theme-color-button" data-color="#6B670D" aria-label="名人 #6B670D">名人</button>
+          <button type="button" class="theme-color-button" data-color="#0D6B2F" aria-label="王位 #0D6B2F">王位</button>
+          <button type="button" class="theme-color-button" data-color="#0D236B" aria-label="賽王 #0D236B">賽王</button>
+          <button type="button" class="theme-color-button" data-color="#6B230D" aria-label="棋聖 #6B230D">棋聖</button>
+          <button type="button" class="theme-color-button" data-color="#6B0D5B" aria-label="女王 #6B0D5B">女王</button>
+          <button type="button" class="theme-color-button" data-color="#0D676B" aria-label="新鋭 #0D676B">新鋭</button>
+        </div>
+      </label>
+      <label>
+        <span>ボードデザイン</span>
+        <select id="designPresetSelect">
+          <option value="green">グリーン</option>
+        </select>
+        <div id="designPresetPreview" class="design-preset-preview" aria-label="選択中デザインの配色"></div>
+        <div id="designColorEditor" class="design-color-editor">
+          <span id="designColorLabel" class="design-color-label">盤面</span>
+          <input id="designColorInput" type="text" value="" placeholder="#RRGGBB" maxlength="7" spellcheck="false" aria-label="選択項目のカラーコード">
+          <span id="designColorSwatch" class="design-color-swatch" aria-label="選択項目の色"></span>
+          <button id="designColorNoneBtn" type="button">色なし</button>
+        </div>
+      </label>
+    </div>
+  </section>
 
-    <section class="main-area">
-      <section class="board-area">
-        <svg id="board" viewBox="0 0 702 546" role="img" aria-label="Backgammon board">
-          <rect width="702" height="546" fill="#ffffff"/>
-          <g id="boardBase" stroke="#000000" stroke-linejoin="round">
-            <rect x="11" y="28" width="680" height="490" fill="#ffffff" stroke-width="4"/>
-            <line x1="58.5" y1="28" x2="58.5" y2="518" stroke-width="4"/>
-            <line x1="326.5" y1="28" x2="326.5" y2="518" stroke-width="4"/>
-            <line x1="374.5" y1="28" x2="374.5" y2="518" stroke-width="4"/>
-            <line x1="644.5" y1="28" x2="644.5" y2="518" stroke-width="4"/>
-            <rect x="10.5" y="247" width="48" height="53" fill="#000000" stroke-width="0"/>
-            <rect x="645.5" y="247" width="46" height="53" fill="#000000" stroke-width="0"/>
-          </g>
-          <g id="points"></g>
-          <g id="pointLabels"></g>
-          <g id="checkers"></g>
-          <g id="dice"></g>
-          <g id="cube"></g>
-          <g id="boardFrameOverlay" stroke-linejoin="round" pointer-events="none" aria-hidden="true">
-            <rect class="board-frame-outline" x="11" y="28" width="680" height="490" fill="none" stroke-width="4"/>
-            <line x1="58.5" y1="28" x2="58.5" y2="518" stroke-width="4"/>
-            <line x1="326.5" y1="28" x2="326.5" y2="518" stroke-width="4"/>
-            <line x1="374.5" y1="28" x2="374.5" y2="518" stroke-width="4"/>
-            <line x1="644.5" y1="28" x2="644.5" y2="518" stroke-width="4"/>
-            <rect class="board-frame-fill" x="10.5" y="247" width="48" height="53" stroke-width="0"/>
-            <rect class="board-frame-fill" x="645.5" y="247" width="46" height="53" stroke-width="0"/>
-          </g>
-        </svg>
-        <div id="achievementOverlay" class="achievement-overlay" aria-hidden="true"></div>
-        <div id="boardDimOverlay" class="board-dim-overlay" aria-hidden="true"></div>
-      </section>
-
-      <aside class="info-area">
-        <section class="history-area">
-          <div class="history-name-row">
-            <div class="history-player-name" id="blackHistoryName">柳 暢祐</div>
-            <div class="history-player-name" id="whiteHistoryName">平林 直</div>
-          </div>
-          <div class="history-list" id="historyList"></div>
-        </section>
-
-        <section class="analysis-area">
-          <div id="analysisContent" class="analysis-content"></div>
-        </section>
-
-        <section class="ad-area">
-          <div class="ad-grid">
-            <div class="ad-frame">
-              <img id="adImage1" alt="advertisement 1" hidden>
-            </div>
-            <div class="ad-frame">
-              <img id="adImage2" alt="advertisement 2" hidden>
-            </div>
-          </div>
-        </section>
-      </aside>
-    </section>
-  </main>
-</div>
-<script src="./app.js?v=217"></script>
+  <section class="info-card">
+    <div class="runtime-url-grid">
+      <div class="runtime-url-item">
+        <p>OBS Browser Source</p>
+        <code id="obsBrowserSourceUrl"></code>
+      </div>
+      <div class="runtime-url-item">
+        <p>操作画面URL</p>
+        <code id="controlPageUrl"></code>
+      </div>
+    </div>
+  </section>
+</main>
+<script src="./control.js?v=217"></script>
 </body>
 </html>
