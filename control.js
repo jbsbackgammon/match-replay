@@ -30,8 +30,6 @@ const applyMetaBtn = document.getElementById("applyMetaBtn");
 const refreshMatchesBtn = document.getElementById("refreshMatchesBtn");
 const loadedFileName = document.getElementById("loadedFileName");
 const gameMarkers = document.getElementById("gameMarkers");
-const obsBrowserSourceUrl = document.getElementById("obsBrowserSourceUrl");
-const controlPageUrl = document.getElementById("controlPageUrl");
 
 let socket = null;
 const pageChannel = (!isLocalRuntime() && "BroadcastChannel" in window) ? new BroadcastChannel("match-replay-control") : null;
@@ -135,16 +133,6 @@ function syncMetaEditorsFromState(){
 function isLocalRuntime(){
   return location.hostname === "localhost" || location.hostname === "127.0.0.1";
 }
-function renderRuntimeUrls(){
-  // 現在開いている場所を基準にするため、localhost / 127.0.0.1 / GitHub Pages のいずれでも自動で切り替わる。
-  const controlUrl=new URL(location.href);
-  controlUrl.search="";
-  controlUrl.hash="";
-  const displayUrl=new URL("./display.html",controlUrl);
-  if(obsBrowserSourceUrl)obsBrowserSourceUrl.textContent=displayUrl.href;
-  if(controlPageUrl)controlPageUrl.textContent=controlUrl.href;
-}
-
 function sendCommand(command, value){
   if(socket && socket.readyState === WebSocket.OPEN){
     socket.send(JSON.stringify({type:"command", command, value}));
@@ -195,7 +183,8 @@ function renderThemePresetButtons(){
     button.className="theme-color-button";
     button.dataset.brandId=item.id;
     button.dataset.color=item.color;
-    button.textContent=item.name.replace(/戦$/,'').replace(/選手権$/,'').replace(/オープン$/,'');
+    // commonに登録された大会名の先頭1文字だけを帯に表示する。
+    button.textContent=Array.from(item.name||"")[0]||"?";
     button.title=`${item.name} ${item.color}`;
     button.setAttribute("aria-label",`${item.name} ${item.color}`);
     themeColorPreview.appendChild(button);
@@ -419,6 +408,8 @@ async function loadDesignPresets(){
 function cacheTimingStates(file, states){
   timingMatchFile=String(file||"");
   timingStates=Array.isArray(states)?states:[];
+  // ステートの非同期取得が完了したときにも大逆転の位置を反映する。
+  if(timingMatchFile===String(lastState.meta?.matchFile||"")) renderGameMarkers();
 }
 
 function normalizedPlaybackRate(value){
@@ -511,13 +502,23 @@ async function ensureTimingStates(file){
 function renderGameMarkers(){
   const total=Math.max(1,Number(lastState.totalSteps)||1);
   const starts=Array.isArray(lastState.gameStarts)?lastState.gameStarts:[];
-  gameMarkers.innerHTML=starts.map((g,i)=>{
+  const gameHtml=starts.map((g,i)=>{
     const idx=Math.max(0,Math.min(total-1,Number(g.index)||0));
     const pct=total<=1?0:(idx/(total-1))*100;
     const edgeClass=pct<=0.5?" first":(pct>=99.5?" last":"");
     const gameNumber=Number(g.gameNumber)||i+1;
     return `<span class="game-marker${edgeClass}" style="left:${pct}%" data-index="${idx}" title="Game ${gameNumber}へ移動" role="button" tabindex="0" aria-label="Game ${gameNumber}へ移動"><span class="game-marker-number">${gameNumber}</span><span class="game-marker-caret">▼</span></span>`;
   }).join("");
+  // 大逆転はイントロ画面ではなく、実際に出目が表示されるロールの位置を示す。
+  // 同じロールに属する他フェーズ（analysis/candidates 等）は重複表示しない。
+  const comebackHtml=(timingMatchFile===String(lastState.meta?.matchFile||"")?timingStates:[])
+    .slice(0,total).map((state,index)=>{
+      if(state?.phase!=="roll" || state?.rollNotice!=="comeback") return "";
+      const pct=total<=1?0:index/(total-1)*100;
+      const edgeClass=pct<=0.5?" first":(pct>=99.5?" last":"");
+      return `<span class="comeback-marker${edgeClass}" style="left:${pct}%" data-index="${index}" title="大逆転！ 再生位置 ${index+1}へ移動" role="button" tabindex="0" aria-label="大逆転！ 再生位置 ${index+1}へ移動">⚡</span>`;
+    }).join("");
+  gameMarkers.innerHTML=gameHtml+comebackHtml;
 }
 
 function renderState(state){
@@ -821,10 +822,10 @@ function jumpToGameMarker(marker){
   timeline.value=String(targetIndex);
   sendCommand("seek",targetIndex);
 }
-gameMarkers.addEventListener("click",event=>jumpToGameMarker(event.target.closest(".game-marker")));
+gameMarkers.addEventListener("click",event=>jumpToGameMarker(event.target.closest(".game-marker, .comeback-marker")));
 gameMarkers.addEventListener("keydown",event=>{
   if(event.key!=="Enter"&&event.key!==" ")return;
-  const marker=event.target.closest(".game-marker");
+  const marker=event.target.closest(".game-marker, .comeback-marker");
   if(!marker)return;
   event.preventDefault();
   jumpToGameMarker(marker);
@@ -949,4 +950,3 @@ refreshMatches();
 loadPagesInitialState();
 connect();
 
-renderRuntimeUrls();

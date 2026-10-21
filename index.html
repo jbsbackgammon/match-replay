@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>自動棋譜再生システム</title>
-<link rel="stylesheet" href="./control.css?v=102">
+<link rel="stylesheet" href="./control.css?v=104">
 </head>
 <body>
 <main class="control-shell">
@@ -78,8 +78,8 @@
       <label>
         <span>テーマカラー</span>
         <div class="theme-color-input-row">
-          <input id="themeColorInput" type="text" value="#000000" placeholder="#000000" maxlength="7" spellcheck="false">
           <span id="themeColorSwatch" class="theme-color-swatch" aria-label="入力中のテーマカラー"></span>
+          <input id="themeColorInput" type="text" value="#000000" placeholder="#000000" maxlength="7" spellcheck="false">
         </div>
         <div id="themeColorPreview" class="theme-color-preview" aria-label="テーマカラーのプリセット">
           <!-- common/brand.json からブランドカラーを生成します（通信失敗時はJSの控えを使用）。 -->
@@ -101,20 +101,8 @@
     </div>
   </section>
 
-  <section class="info-card">
-    <div class="runtime-url-grid">
-      <div class="runtime-url-item">
-        <p>OBS Browser Source</p>
-        <code id="obsBrowserSourceUrl"></code>
-      </div>
-      <div class="runtime-url-item">
-        <p>操作画面URL</p>
-        <code id="controlPageUrl"></code>
-      </div>
-    </div>
-  </section>
 </main>
 <script src="./brand-theme.js?v=102"></script>
-<script src="./control.js?v=102"></script>
+<script src="./control.js?v=104"></script>
 </body>
 </html>
