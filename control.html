@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Match Replay Control</title>
+<link rel="stylesheet" href="./control.css?v=217">
+</head>
+<body>
+<main class="control-shell">
+  <header class="control-header">
+    <h1>MATCH REPLAY <span>操作画面</span></h1>
+    <div id="connection" class="connection offline" hidden>DISCONNECTED</div>
+  </header>
+
+  <section class="mode-card">
+    <div class="playback-buttons">
+      <button id="autoNormalModeBtn">等倍 ▶</button>
+      <button id="autoDoubleModeBtn">倍速 ▶</button>
+      <button id="autoTripleModeBtn">3倍 ▶</button>
+      <button id="autoSixModeBtn">6倍 ▶</button>
+      <button id="prevBtn">前へ</button>
+      <button id="nextBtn">次へ</button>
+      <button id="pauseBtn" class="active">停止</button>
+    </div>
+  </section>
+
+  <section class="status-card">
+    <div class="status-summary">
+      <span>位置</span><strong id="stepText">1 / 1</strong>
+      <span class="status-divider">ゲーム</span><strong id="gamePosition">1 / 1</strong>
+      <span class="status-divider">残時間</span><strong id="remainingTime">0:00</strong>
+    </div>
+    <div class="timeline-block">
+      <div class="timeline-wrap">
+        <div id="gameMarkers" class="game-markers"></div>
+        <input id="timeline" type="range" min="0" max="0" step="1" value="0" aria-label="棋譜位置">
+      </div>
+    </div>
+    <div class="loaded-file">
+      <span>PAGES MODE</span>
+      <strong id="loadedFileName">未選択</strong>
+    </div>
+  </section>
+
+  <section class="meta-card">
+    <div class="match-file-row">
+      <label class="match-file-field">
+        <select id="matchFileSelect" aria-label="棋譜ファイル">
+          <option value="">(未選択)</option>
+        </select>
+      </label>
+      <div class="match-actions">
+        <button id="refreshMatchesBtn">棋譜一覧更新</button>
+        <button id="applyMetaBtn" class="primary">配信画面反映</button>
+      </div>
+    </div>
+    <div class="meta-grid">
+      <label>
+        <span>試合名</span>
+        <input id="tournamentLine1Input" type="text" value="">
+      </label>
+      <label>
+        <span>試合補足</span>
+        <input id="tournamentLine2Input" type="text" value="">
+      </label>
+      <label>
+        <span>選手1</span>
+        <input id="blackNameInput" type="text" value="">
+      </label>
+      <label>
+        <span>選手2</span>
+        <input id="whiteNameInput" type="text" value="">
+      </label>
+      <label>
+        <span>テーマカラー</span>
+        <div class="theme-color-input-row">
+          <input id="themeColorInput" type="text" value="#000000" placeholder="#000000" maxlength="7" spellcheck="false">
+          <span id="themeColorSwatch" class="theme-color-swatch" aria-label="入力中のテーマカラー"></span>
+        </div>
+        <div id="themeColorPreview" class="theme-color-preview" aria-label="テーマカラーのプリセット">
+          <button type="button" class="theme-color-button" data-color="#3C3C3C" aria-label="日本 #3C3C3C">日本</button>
+          <button type="button" class="theme-color-button" data-color="#6B0D2F" aria-label="盤聖 #6B0D2F">盤聖</button>
+          <button type="button" class="theme-color-button" data-color="#6B670D" aria-label="名人 #6B670D">名人</button>
+          <button type="button" class="theme-color-button" data-color="#0D6B2F" aria-label="王位 #0D6B2F">王位</button>
+          <button type="button" class="theme-color-button" data-color="#0D236B" aria-label="賽王 #0D236B">賽王</button>
+          <button type="button" class="theme-color-button" data-color="#6B230D" aria-label="棋聖 #6B230D">棋聖</button>
+          <button type="button" class="theme-color-button" data-color="#6B0D5B" aria-label="女王 #6B0D5B">女王</button>
+          <button type="button" class="theme-color-button" data-color="#0D676B" aria-label="新鋭 #0D676B">新鋭</button>
+        </div>
+      </label>
+      <label>
+        <span>ボードデザイン</span>
+        <select id="designPresetSelect">
+          <option value="green">グリーン</option>
+        </select>
+        <div id="designPresetPreview" class="design-preset-preview" aria-label="選択中デザインの配色"></div>
+        <div id="designColorEditor" class="design-color-editor">
+          <span id="designColorLabel" class="design-color-label">盤面</span>
+          <input id="designColorInput" type="text" value="" placeholder="#RRGGBB" maxlength="7" spellcheck="false" aria-label="選択項目のカラーコード">
+          <span id="designColorSwatch" class="design-color-swatch" aria-label="選択項目の色"></span>
+          <button id="designColorNoneBtn" type="button">色なし</button>
+        </div>
+      </label>
+    </div>
+  </section>
+
+  <section class="info-card">
+    <div class="runtime-url-grid">
+      <div class="runtime-url-item">
+        <p>OBS Browser Source</p>
+        <code id="obsBrowserSourceUrl"></code>
+      </div>
+      <div class="runtime-url-item">
+        <p>操作画面URL</p>
+        <code id="controlPageUrl"></code>
+      </div>
+    </div>
+  </section>
+</main>
+<script src="./control.js?v=217"></script>
+</body>
+</html>

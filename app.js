@@ -1,0 +1,1602 @@
+const pointsG=document.getElementById("points");
+const checkersG=document.getElementById("checkers");
+const diceG=document.getElementById("dice");
+const cubeG=document.getElementById("cube");
+const boardSvg=document.getElementById("board");
+const gameOverlayG=document.createElementNS("http://www.w3.org/2000/svg","g");
+gameOverlayG.setAttribute("id","gameOverlay");
+boardSvg.appendChild(gameOverlayG);
+const pipInfoG=document.createElementNS("http://www.w3.org/2000/svg","g");
+pipInfoG.setAttribute("id","pipInfo");
+boardSvg.appendChild(pipInfoG);
+const moveAnimationG=document.createElementNS("http://www.w3.org/2000/svg","g");
+moveAnimationG.setAttribute("id","moveAnimation");
+boardSvg.appendChild(moveAnimationG);
+let moveAnimationToken=0;
+let moveAnimationRunning=false;
+let lastMoveAnimationKey="";
+const BASE_CHECKER_MOVE_DURATION=500;
+const BASE_CUBE_MOVE_DURATION=1400;
+let lastCubeVisualTarget=null;
+
+const defaultMeta={
+  tournamentTitleLine1:"",
+  tournamentTitleLine2:"",
+  blackName:"",whiteName:"",blackScore:0,whiteScore:0,matchFile:"",themeColor:"#000000",designPreset:"green",designOverrides:{}
+};
+const standardPoints=[0,-2,0,0,0,0,5,0,3,0,0,0,-5,5,0,0,0,-3,0,-5,0,0,0,0,2];
+const emptyState={
+  phase:"empty",score:[0,0],activePlayer:0,position:{points:standardPoints,blackBar:0,whiteBar:0,blackOff:0,whiteOff:0},
+  dice:null,cube:{value:1,owner:0},winRate:{black:50,white:50},gammonRate:{black:0,white:0},backgammonRate:{black:0,white:0},analysis:{type:"none"},historyEvent:null
+};
+
+const FALLBACK_DESIGN={
+  id:"green",name:"グリーン",
+  checkers:{player1:"#17382C",player2:"#F7F0DE",border:"#173327"},
+  winRate:{player1:"#17382C",player2:"#F7F0DE"},
+  board:{surface:"#CDBB91",frame:"#173327",pointLight:"#F2E6C6",pointDark:"#3E705B",pointBorder:"#173327",bar:"#284F3D"}
+};
+let designPresets=[FALLBACK_DESIGN];
+let currentDesign=FALLBACK_DESIGN;
+let appliedDesignPresetId="";
+let appliedDesignOverridesKey="";
+
+let index=0,meta={...defaultMeta},matchData={states:[emptyState]},loadedMatchFile="",socket=null;
+let adFiles=[],adIndex=0,adTimer=null;
+let lastBigComebackKey="";
+let lastAchievementKey="";
+let lastBoardDimKey="";
+let lastComebackFxKey="";
+const SEQUENCE_SPEED=6000;
+const BIG_COMEBACK_SPEED=SEQUENCE_SPEED;
+const BIG_COMEBACK_DIM_SPEED=SEQUENCE_SPEED;
+let pagesTimer=null;
+const PLAYBACK_SPEED=SEQUENCE_SPEED;
+const PRE_ROLL_SPEED=SEQUENCE_SPEED;
+const ROLL_SPEED=SEQUENCE_SPEED;
+const CANDIDATE_SPEED=SEQUENCE_SPEED;
+const MOVE_SPEED=SEQUENCE_SPEED;
+const CUBE_SPEED=SEQUENCE_SPEED;
+const SCORE_SEQUENCE_SPEED=SEQUENCE_SPEED;
+let localPlaybackRate=1;
+let pagesState={index:0,totalSteps:1,playing:false,speed:PLAYBACK_SPEED,playbackRate:1,mode:"auto"};
+const isLocal=()=>location.hostname==="localhost"||location.hostname==="127.0.0.1";
+const pageChannel=(!isLocal()&&"BroadcastChannel" in window)?new BroadcastChannel("match-replay-control"):null;
+let pagesMetaRevision="";
+let pagesMetaPoller=null;
+function normalizedPlaybackRate(value){const rate=Number(value);return Number.isInteger(rate)&&rate>=1&&rate<=9?rate:1;}
+function currentPlaybackRate(){return isLocal()?normalizedPlaybackRate(localPlaybackRate):normalizedPlaybackRate(pagesState.playbackRate);}
+function scaledSequenceDelay(ms){return Math.max(1,Math.round(ms/currentPlaybackRate()));}
+function checkerMoveDuration(){return BASE_CHECKER_MOVE_DURATION/currentPlaybackRate();}
+function applyPlaybackTiming(){
+  const duration=scaledSequenceDelay(SEQUENCE_SPEED);
+  document.documentElement.style.setProperty("--sequence-duration",`${duration}ms`);
+}
+
+const els={
+  stageWrap:document.getElementById("stage-wrap"),stage:document.getElementById("stage"),
+  tournamentTitleLine1:document.getElementById("tournamentTitleLine1"),
+  tournamentTitleLine2:document.getElementById("tournamentTitleLine2"),
+  blackName:document.getElementById("blackName"),whiteName:document.getElementById("whiteName"),
+  blackHistoryName:document.getElementById("blackHistoryName"),whiteHistoryName:document.getElementById("whiteHistoryName"),
+  blackScore:document.getElementById("blackScore"),whiteScore:document.getElementById("whiteScore"),
+  winBarBlack:document.getElementById("winBarBlack"),winBarWhite:document.getElementById("winBarWhite"),
+  gammonBarBlack:document.getElementById("gammonBarBlack"),gammonBarWhite:document.getElementById("gammonBarWhite"),
+  backgammonBarBlack:document.getElementById("backgammonBarBlack"),backgammonBarWhite:document.getElementById("backgammonBarWhite"),
+  blackRateText:document.getElementById("blackRateText"),whiteRateText:document.getElementById("whiteRateText"),
+  blackGammonText:document.getElementById("blackGammonText"),whiteGammonText:document.getElementById("whiteGammonText"),
+  blackBackgammonText:document.getElementById("blackBackgammonText"),whiteBackgammonText:document.getElementById("whiteBackgammonText"),
+  bigComebackText:document.getElementById("bigComebackText"),
+  achievementOverlay:document.getElementById("achievementOverlay"),
+  boardDimOverlay:document.getElementById("boardDimOverlay"),
+  winrateBar:document.querySelector(".winrate-bar"),
+  historyList:document.getElementById("historyList"),
+  blackHistoryList:document.getElementById("blackHistoryList"),whiteHistoryList:document.getElementById("whiteHistoryList"),
+  analysisContent:document.getElementById("analysisContent"),
+  adImage1:document.getElementById("adImage1"),adImage2:document.getElementById("adImage2")
+};
+
+const pointLabelCenters=[81.75,126.25,170.75,215.25,259.75,304.25,397.75,442.25,486.75,531.25,575.75,620.25];
+function boardInfoTextColor(){
+  return contrastText(currentDesign?.board?.surface||"#FFFFFF");
+}
+function drawPointLabels(activePlayer=1){
+  const labelsG=document.getElementById("pointLabels");labelsG.innerHTML="";
+  const player2=activePlayer===-1;
+  const labelFill=boardInfoTextColor();
+  const topNums=player2?[12,11,10,9,8,7,6,5,4,3,2,1]:[13,14,15,16,17,18,19,20,21,22,23,24];
+  const bottomNums=player2?[13,14,15,16,17,18,19,20,21,22,23,24]:[12,11,10,9,8,7,6,5,4,3,2,1];
+  pointLabelCenters.forEach((cx,i)=>{
+    for(const [y,n] of [[14,topNums[i]],[532,bottomNums[i]]]){
+      const t=document.createElementNS("http://www.w3.org/2000/svg","text");
+      t.setAttribute("x",cx);t.setAttribute("y",y);t.setAttribute("class","point-label");t.setAttribute("fill",labelFill);t.textContent=n;labelsG.appendChild(t);
+    }
+  });
+}
+function calculatePips(position){
+  const points=position?.points||standardPoints;
+  let black=25*Number(position?.blackBar||0);
+  let white=25*Number(position?.whiteBar||0);
+  for(let p=1;p<=24;p++){
+    const v=Number(points[p]||0);
+    if(v>0) black += p*v;
+    else if(v<0) white += (25-p)*Math.abs(v);
+  }
+  return {black,white};
+}
+function drawPipInfo(position){
+  pipInfoG.innerHTML="";
+  const pips=calculatePips(position);
+  const labelFill=boardInfoTextColor();
+  for(const [y,text] of [[14,`(${pips.white})`],[532,`(${pips.black})`]]){
+    const t=document.createElementNS("http://www.w3.org/2000/svg","text");
+    t.setAttribute("x","350.5");
+    t.setAttribute("y",String(y));
+    t.setAttribute("class","pip-label");
+    t.setAttribute("fill",labelFill);
+    t.textContent=text;
+    pipInfoG.appendChild(t);
+  }
+}
+function trianglePoints(){
+  pointsG.innerHTML="";
+  const centers=pointLabelCenters,w=44.5;
+  for(let i=0;i<12;i++){
+    const cx=centers[i],left=cx-w/2;
+    const light=currentDesign?.board?.pointLight||"#FFFFFF";
+    const dark=currentDesign?.board?.pointDark||"#CFCFCF";
+    for(const [top,color] of [[true,i%2===0?light:dark],[false,i%2===0?dark:light]]){
+      const p=document.createElementNS("http://www.w3.org/2000/svg","polygon");p.setAttribute("class","point");p.setAttribute("fill",color);
+      p.setAttribute("points",top?`${left},30 ${left+w},30 ${cx},251`:`${left},516 ${left+w},516 ${cx},294`);pointsG.appendChild(p);
+    }
+  }
+  drawPointLabels(1);
+}
+function pointCoord(p){const c=[81.75,126.25,170.75,215.25,259.75,304.25,397.75,442.25,486.75,531.25,575.75,620.25];return p<=12?{x:c[12-p],y:493,dir:-1}:{x:c[p-13],y:53,dir:1};}
+const CHECKER_STACK_PITCH=43;
+const CHECKER_MAX_RADIUS=CHECKER_STACK_PITCH/2;
+const CHECKER_BORDER_WIDTH=1.2;
+function checkerBorderEnabled(design=currentDesign){
+  const value=design?.checkers?.border;
+  if(value===undefined) return true;
+  if(value===null) return false;
+  const text=String(value).trim().toLowerCase();
+  return Boolean(text)&&text!=="none"&&text!=="transparent";
+}
+function checkerCircleRadius(){
+  return CHECKER_MAX_RADIUS-(checkerBorderEnabled()?CHECKER_BORDER_WIDTH/2:0);
+}
+function addStack(x,y,dir,n,klass){
+  if(!n)return;const max=Math.min(n,5);
+  for(let i=0;i<max;i++){const c=document.createElementNS("http://www.w3.org/2000/svg","circle");c.setAttribute("cx",x);c.setAttribute("cy",y+dir*i*CHECKER_STACK_PITCH);c.setAttribute("r",String(checkerCircleRadius()));c.setAttribute("class",klass);checkersG.appendChild(c);}
+  if(n>5){const t=document.createElementNS("http://www.w3.org/2000/svg","text");t.setAttribute("x",x);t.setAttribute("y",y+dir*4*43);t.setAttribute("class","checker-text");const checkerFill=klass.includes("black")?(currentDesign?.checkers?.player1||"#111111"):(currentDesign?.checkers?.player2||"#FFFFFF");
+    t.setAttribute("fill",contrastText(checkerFill));t.textContent=n;checkersG.appendChild(t);}
+}
+function addBarStack(centerY,n,klass){
+  const count=Math.max(0,Number(n)||0);
+  if(!count)return;
+  // Position Drill / 添付SVG準拠。バーの上下ハーフ中央を基準にし、
+  // 2枚なら 38px 間隔。枚数が多い場合だけ自動的に詰めてハーフ内へ収める。
+  const spacing=count<=1?0:Math.min(38,190/(count-1));
+  const firstY=centerY-spacing*(count-1)/2;
+  for(let i=0;i<count;i++){
+    const c=document.createElementNS("http://www.w3.org/2000/svg","circle");
+    c.setAttribute("cx","350.5");
+    c.setAttribute("cy",String(firstY+spacing*i));
+    c.setAttribute("r",String(checkerCircleRadius()));
+    c.setAttribute("class",klass);
+    checkersG.appendChild(c);
+  }
+}
+const BEAR_OFF_GEOMETRY={x:648,w:41,h:12,upperBase:33,lowerBase:501,pitch:12.4,groupGap:4};
+function bearOffRectY(index,upper){
+  const g=BEAR_OFF_GEOMETRY;
+  const gap=Math.floor(index/5)*g.groupGap;
+  return upper ? g.upperBase+index*g.pitch+gap : g.lowerBase-index*g.pitch-gap;
+}
+function addBearOffStack(count,klass,upper){
+  const n=Math.max(0,Math.min(15,Number(count)||0));
+  if(!n)return;
+  // 添付SVGの右端ベアオフトレイに合わせる。15枚でも上下中央に食い込まず、
+  // 5枚ごとに小さな間隔を設けて 5 / 5 / 5 のまとまりを読み取りやすくする。
+  const g=BEAR_OFF_GEOMETRY;
+  for(let i=0;i<n;i++){
+    const r=document.createElementNS("http://www.w3.org/2000/svg","rect");
+    const inset=checkerBorderEnabled()?CHECKER_BORDER_WIDTH/2:0;
+    r.setAttribute("x",String(g.x+inset));
+    r.setAttribute("y",String(bearOffRectY(i,upper)+inset));
+    r.setAttribute("width",String(g.w-inset*2));r.setAttribute("height",String(g.h-inset*2));r.setAttribute("rx",String(Math.max(0,4-inset)));
+    r.setAttribute("class",klass);checkersG.appendChild(r);
+  }
+}
+function drawCheckers(position){
+  checkersG.innerHTML="";const arr=position?.points||standardPoints;
+  for(let p=1;p<=24;p++){const v=arr[p]||0;if(!v)continue;const q=pointCoord(p);addStack(q.x,q.y,q.dir,Math.abs(v),v>0?"checker-piece-black":"checker-piece-white");}
+  // 添付SVG: 白は上側バー中央 (y=150.5)、黒は下側バー中央 (y=395.5)。
+  addBarStack(150.5,position?.whiteBar||0,"checker-piece-white");
+  addBarStack(395.5,position?.blackBar||0,"checker-piece-black");
+  addBearOffStack(position?.whiteOff||0,"checker-piece-white",true);
+  addBearOffStack(position?.blackOff||0,"checker-piece-black",false);
+}
+
+function cloneVisualPosition(position){
+  return {
+    points:(position?.points||Array(25).fill(0)).slice(),
+    blackBar:Number(position?.blackBar||0),whiteBar:Number(position?.whiteBar||0),
+    blackOff:Number(position?.blackOff||0),whiteOff:Number(position?.whiteOff||0)
+  };
+}
+function moveCheckerClass(activePlayer){return activePlayer===1?"checker-piece-black":"checker-piece-white";}
+function ownCountAt(position,point,activePlayer){
+  const v=Number(position?.points?.[point]||0);
+  return activePlayer===1?Math.max(0,v):Math.max(0,-v);
+}
+function stackTopCoord(point,count){
+  const q=pointCoord(point),i=Math.max(0,Math.min(Math.max(1,count),5)-1);
+  return {x:q.x,y:q.y+q.dir*i*CHECKER_STACK_PITCH};
+}
+function barMoveCoord(position,activePlayer){
+  const count=Math.max(1,Number(activePlayer===1?position?.blackBar:position?.whiteBar)||1);
+  const centerY=activePlayer===1?395.5:150.5;
+  const spacing=count<=1?0:Math.min(38,190/(count-1));
+  const firstY=centerY-spacing*(count-1)/2;
+  // バー中央寄りの一枚から動かす。
+  const y=activePlayer===1?firstY:firstY+spacing*(count-1);
+  return {x:350.5,y};
+}
+function bearOffMoveCoord(position,activePlayer){
+  const g=BEAR_OFF_GEOMETRY,x=g.x+g.w/2;
+  if(activePlayer===1){
+    const n=Math.max(0,Math.min(14,Number(position?.blackOff)||0));
+    return {x,y:bearOffRectY(n,false)+g.h/2};
+  }
+  const n=Math.max(0,Math.min(14,Number(position?.whiteOff)||0));
+  return {x,y:bearOffRectY(n,true)+g.h/2};
+}
+function sourceMoveCoord(position,segment,activePlayer){
+  if(segment?.source==="bar")return barMoveCoord(position,activePlayer);
+  const p=Number(segment?.source);
+  if(Number.isInteger(p)&&p>=1&&p<=24)return stackTopCoord(p,ownCountAt(position,p,activePlayer));
+  return {x:350.5,y:273};
+}
+function destinationMoveCoord(positionAfterSource,segment,activePlayer){
+  const p=Number(segment?.destination);
+  if(Number.isInteger(p)&&p>=1&&p<=24){
+    const q=pointCoord(p),own=ownCountAt(positionAfterSource,p,activePlayer);
+    const v=Number(positionAfterSource?.points?.[p]||0);
+    const opponentBlot=activePlayer===1?v===-1:v===1;
+    const i=opponentBlot?0:Math.min(own,4);
+    return {x:q.x,y:q.y+q.dir*i*CHECKER_STACK_PITCH};
+  }
+  return bearOffMoveCoord(positionAfterSource,activePlayer);
+}
+function removeMovingChecker(position,segment,activePlayer){
+  const out=cloneVisualPosition(position),sign=activePlayer===1?1:-1;
+  if(segment?.source==="bar"){
+    if(activePlayer===1)out.blackBar=Math.max(0,out.blackBar-1);else out.whiteBar=Math.max(0,out.whiteBar-1);
+  }else{
+    const p=Number(segment?.source);if(Number.isInteger(p)&&p>=1&&p<=24)out.points[p]-=sign;
+  }
+  return out;
+}
+function finishMovingChecker(positionAfterSource,segment,activePlayer){
+  const out=cloneVisualPosition(positionAfterSource),sign=activePlayer===1?1:-1;
+  const p=Number(segment?.destination);
+  if(Number.isInteger(p)&&p>=1&&p<=24){
+    if(activePlayer===1&&out.points[p]===-1){out.points[p]=0;out.whiteBar+=1;}
+    else if(activePlayer===-1&&out.points[p]===1){out.points[p]=0;out.blackBar+=1;}
+    out.points[p]+=sign;
+  }else if(activePlayer===1)out.blackOff+=1;else out.whiteOff+=1;
+  return out;
+}
+function landHitWithoutBar(positionAfterSource,segment,activePlayer){
+  const out=cloneVisualPosition(positionAfterSource),sign=activePlayer===1?1:-1;
+  const p=Number(segment?.destination);
+  if(!Number.isInteger(p)||p<1||p>24)return out;
+  out.points[p]=sign;
+  return out;
+}
+function finishHitToBar(positionAfterLanding,activePlayer){
+  const out=cloneVisualPosition(positionAfterLanding);
+  const hitPlayer=-activePlayer;
+  if(hitPlayer===1)out.blackBar+=1;else out.whiteBar+=1;
+  return out;
+}
+function easeCheckerMove(t){return t<.5?2*t*t:1-Math.pow(-2*t+2,2)/2;}
+function animateCheckerBetween(from,to,activePlayer,token){
+  return new Promise(resolve=>{
+    if(token!==moveAnimationToken){resolve(false);return;}
+    const c=document.createElementNS("http://www.w3.org/2000/svg","circle");
+    c.setAttribute("cx",String(from.x));c.setAttribute("cy",String(from.y));c.setAttribute("r",String(checkerCircleRadius()));
+    c.setAttribute("class",moveCheckerClass(activePlayer));
+    moveAnimationG.appendChild(c);
+    const started=performance.now();
+    const frame=now=>{
+      if(token!==moveAnimationToken){c.remove();resolve(false);return;}
+      const t=Math.min(1,(now-started)/checkerMoveDuration()),e=easeCheckerMove(t);
+      c.setAttribute("cx",String(from.x+(to.x-from.x)*e));
+      c.setAttribute("cy",String(from.y+(to.y-from.y)*e));
+      if(t>=1){c.remove();resolve(true);return;}
+      requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+  });
+}
+function cancelCheckerAnimation(){
+  moveAnimationToken+=1;moveAnimationRunning=false;moveAnimationG.innerHTML="";
+}
+async function runCheckerAnimation(state,key){
+  const token=++moveAnimationToken;
+  moveAnimationRunning=true;moveAnimationG.innerHTML="";
+  let board=cloneVisualPosition(state.moveAnimation.beforePosition);
+  drawCheckers(board);
+  for(const segment of state.moveAnimation.segments||[]){
+    if(token!==moveAnimationToken)return;
+    const from=sourceMoveCoord(board,segment,state.activePlayer);
+    const withoutSource=removeMovingChecker(board,segment,state.activePlayer);
+    const to=destinationMoveCoord(withoutSource,segment,state.activePlayer);
+    drawCheckers(withoutSource);
+    const completed=await animateCheckerBetween(from,to,state.activePlayer,token);
+    if(!completed||token!==moveAnimationToken)return;
+    if(segment?.hit){
+      const destination=Number(segment.destination);
+      const hitPlayer=-state.activePlayer;
+      const landed=landHitWithoutBar(withoutSource,segment,state.activePlayer);
+      drawCheckers(landed);
+      const q=pointCoord(destination);
+      const afterHit=finishHitToBar(landed,state.activePlayer);
+      const hitTo=barMoveCoord(afterHit,hitPlayer);
+      const hitCompleted=await animateCheckerBetween({x:q.x,y:q.y},hitTo,hitPlayer,token);
+      if(!hitCompleted||token!==moveAnimationToken)return;
+      board=afterHit;
+    }else{
+      board=finishMovingChecker(withoutSource,segment,state.activePlayer);
+    }
+    drawCheckers(board);
+  }
+  if(token!==moveAnimationToken)return;
+  moveAnimationRunning=false;moveAnimationG.innerHTML="";
+  drawCheckers(state.position);
+}
+function renderAnimatedCheckers(state){
+  const eligible=(state?.phase==="analysis"||(state?.phase==="candidates"&&state?.forcedMove)||(state?.phase==="roll"&&state?.noContactCombined))&&state?.moveAnimation&&Array.isArray(state.moveAnimation.segments)&&state.moveAnimation.segments.length>0;
+  const key=`${loadedMatchFile}|${index}`;
+  if(!eligible){
+    if(moveAnimationRunning)cancelCheckerAnimation();
+    lastMoveAnimationKey="";moveAnimationG.innerHTML="";drawCheckers(state?.position);return;
+  }
+  if(lastMoveAnimationKey!==key){
+    if(moveAnimationRunning)cancelCheckerAnimation();
+    lastMoveAnimationKey=key;
+    runCheckerAnimation(state,key);
+    return;
+  }
+  if(!moveAnimationRunning)drawCheckers(state.position);
+}
+function drawDice(vals,activePlayer,{luckKind=null,muted=false,comeback=false}={}){
+  diceG.innerHTML="";
+  diceG.classList.toggle("is-joker-glow",luckKind==="joker");
+  diceG.classList.toggle("is-antijoker-glow",luckKind==="antiJoker");
+  diceG.classList.toggle("is-muted",Boolean(muted));
+  if(!vals)return;const spots={1:[[18,18]],2:[[10,10],[26,26]],3:[[10,10],[18,18],[26,26]],4:[[10,10],[26,10],[10,26],[26,26]],5:[[10,10],[26,10],[18,18],[10,26],[26,26]],6:[[10,9],[26,9],[10,18],[26,18],[10,27],[26,27]]};
+  const player1=activePlayer===1;
+  const face=normalizeHex(player1?currentDesign?.checkers?.player1:currentDesign?.checkers?.player2,player1?"#111111":"#FFFFFF");
+  const pip=contrastText(face);
+  const border=(getComputedStyle(document.documentElement).getPropertyValue("--die-border")||"#111111").trim()||"#111111";
+  function die(x,y,n){const g=document.createElementNS("http://www.w3.org/2000/svg","g"),r=document.createElementNS("http://www.w3.org/2000/svg","rect");r.setAttribute("x",x);r.setAttribute("y",y);r.setAttribute("width",36);r.setAttribute("height",36);r.setAttribute("rx",4);r.setAttribute("fill",face);r.setAttribute("stroke",border);r.setAttribute("stroke-width","1.5");g.appendChild(r);(spots[n]||[]).forEach(([dx,dy])=>{const c=document.createElementNS("http://www.w3.org/2000/svg","circle");c.setAttribute("cx",x+dx);c.setAttribute("cy",y+dy);c.setAttribute("r","3.4");c.setAttribute("fill",pip);g.appendChild(c);});return g;}
+  // Player 1 is shown in the center of the right half; Player 2 in the center of the left half.
+  const xs=player1?[468.5,514.5]:[151.5,197.5];
+  diceG.appendChild(die(xs[0],254,vals[0]));diceG.appendChild(die(xs[1],254,vals[1]));
+  if(comeback){
+    const cx=(xs[0]+xs[1]+36)/2;
+    const leftDieCx=xs[0]+18,rightDieCx=xs[1]+18,dieCy=272;
+    const lightning=document.createElementNS("http://www.w3.org/2000/svg","g");
+    lightning.setAttribute("class","comeback-dice-lightning");
+    lightning.setAttribute("aria-hidden","true");
+    const main=document.createElementNS("http://www.w3.org/2000/svg","path");
+    main.setAttribute("class","comeback-lightning-main");
+    main.setAttribute("pathLength","1");
+    main.setAttribute("d",`M ${cx-36} 28 L ${cx+14} 72 L ${cx-18} 106 L ${cx+25} 142 L ${cx-13} 178 L ${cx+17} 211 L ${cx} 246`);
+    const leftBranch=document.createElementNS("http://www.w3.org/2000/svg","path");
+    leftBranch.setAttribute("class","comeback-lightning-branch");
+    leftBranch.setAttribute("pathLength","1");
+    leftBranch.setAttribute("d",`M ${cx} 246 L ${cx-12} 256 L ${leftDieCx} ${dieCy}`);
+    const rightBranch=document.createElementNS("http://www.w3.org/2000/svg","path");
+    rightBranch.setAttribute("class","comeback-lightning-branch");
+    rightBranch.setAttribute("pathLength","1");
+    rightBranch.setAttribute("d",`M ${cx} 246 L ${cx+12} 256 L ${rightDieCx} ${dieCy}`);
+    lightning.appendChild(main);lightning.appendChild(leftBranch);lightning.appendChild(rightBranch);
+    // 雷はサイコロより先に描画し、常にサイコロの背面を走らせる。
+    diceG.insertBefore(lightning,diceG.firstChild);
+  }
+}
+function cubeOwnerTarget(cube){
+  const owner=cube?.owner||0;
+  const isWhite=owner==="white"||owner===-1;
+  const isBlack=owner==="black"||owner===1;
+  return {x:332.5,y:isWhite?35:(isBlack?475:255)};
+}
+function cubeOffererForState(state){
+  const phase=state?.phase||"";
+  if(phase==="cubeOffer"||phase==="cubeOfferSelect") return state?.activePlayer===-1?-1:1;
+  if(phase==="cubeResponse"||phase==="cubeResponseSelect") return state?.activePlayer===1?-1:1;
+  return 0;
+}
+function cubeVisualTarget(state,cube){
+  const phase=state?.phase||"";
+  const responseMove=String(state?.historyEvent?.move||"");
+  const showOfferedPosition=(phase==="cubeOfferSelect"&&responseMove==="Double")||phase==="cubeResponse"||(phase==="cubeResponseSelect"&&responseMove==="Pass");
+  if(showOfferedPosition){
+    const offerer=cubeOffererForState(state);
+    // Player 1: center of the right board half. Player 2: center of the left board half.
+    return {x:offerer===1?491.5:174.5,y:255};
+  }
+  return cubeOwnerTarget(cube);
+}
+function cubeVisualValue(state,cube){
+  const baseValue=Math.max(1,Number(cube?.value)||1);
+  const phase=state?.phase||"";
+  const move=String(state?.historyEvent?.move||"");
+  const eventValue=Number(state?.historyEvent?.cubeValue);
+
+  // Once an actual Double is selected, show the offered (doubled) value
+  // while the cube moves to the opponent's half. Keep that same value
+  // through the response phase; Take then carries it to the new owner bar,
+  // while Pass leaves it at the offered position.
+  if(phase==="cubeOfferSelect"&&move==="Double"){
+    return Number.isFinite(eventValue)&&eventValue>0?eventValue:baseValue*2;
+  }
+  if(phase==="cubeResponse"){
+    return baseValue*2;
+  }
+  if(phase==="cubeResponseSelect"&&move==="Take"){
+    if(Number.isFinite(eventValue)&&eventValue>0) return eventValue;
+    return baseValue*2;
+  }
+  if(phase==="cubeResponseSelect"&&move==="Pass"){
+    // A passed cube is never owned/turned: keep the original pre-double value.
+    return baseValue;
+  }
+  return baseValue;
+}
+function resetCubeMotion(){
+  lastCubeVisualTarget=null;
+}
+function appendCubeMotion(node,attributeName,fromValue,toValue,durationMs){
+  if(Math.abs(Number(fromValue)-Number(toValue))<0.001) return;
+  const animation=document.createElementNS("http://www.w3.org/2000/svg","animate");
+  animation.setAttribute("attributeName",attributeName);
+  animation.setAttribute("from",String(fromValue));
+  animation.setAttribute("to",String(toValue));
+  animation.setAttribute("dur",`${durationMs}ms`);
+  animation.setAttribute("calcMode","spline");
+  animation.setAttribute("keyTimes","0;1");
+  animation.setAttribute("keySplines",".22 .61 .36 1");
+  node.appendChild(animation);
+}
+function drawCube(cube,state=currentState()){
+  cubeG.innerHTML="";
+  cubeG.removeAttribute("transform");
+  cubeG.style.transform="";
+  const value=cubeVisualValue(state,cube);
+  const target=cubeVisualTarget(state,cube);
+  const previous=lastCubeVisualTarget;
+  const cubePhase=["cubeOffer","cubeOfferSelect","cubeResponse","cubeResponseSelect"].includes(state?.phase);
+  const shouldAnimate=Boolean(previous&&cubePhase&&(previous.x!==target.x||previous.y!==target.y));
+  const duration=Math.max(300,Math.round(BASE_CUBE_MOVE_DURATION/currentPlaybackRate()));
+
+  const r=document.createElementNS("http://www.w3.org/2000/svg","rect");
+  r.setAttribute("x",String(target.x));r.setAttribute("y",String(target.y));r.setAttribute("width","36");r.setAttribute("height","36");r.setAttribute("rx","3");
+  r.setAttribute("fill","#fff");r.setAttribute("stroke","#000");r.setAttribute("stroke-width","1.5");
+  if(shouldAnimate){
+    appendCubeMotion(r,"x",previous.x,target.x,duration);
+    appendCubeMotion(r,"y",previous.y,target.y,duration);
+  }
+  cubeG.appendChild(r);
+
+  const t=document.createElementNS("http://www.w3.org/2000/svg","text");
+  t.setAttribute("x",String(target.x+18));t.setAttribute("y",String(target.y+18));t.setAttribute("text-anchor","middle");t.setAttribute("dominant-baseline","central");t.setAttribute("alignment-baseline","central");t.setAttribute("fill","#000");
+  t.setAttribute("font-family",'Noto Sans JP, Noto Sans CJK JP, Yu Gothic, Meiryo, sans-serif');t.setAttribute("font-size","25");t.setAttribute("font-weight","900");t.textContent=value;
+  if(shouldAnimate){
+    appendCubeMotion(t,"x",previous.x+18,target.x+18,duration);
+    appendCubeMotion(t,"y",previous.y+18,target.y+18,duration);
+  }
+  cubeG.appendChild(t);
+  lastCubeVisualTarget={...target};
+}
+function toFullWidthScore(value){
+  return String(value??'').replace(/[0-9]/g,d=>String.fromCharCode(d.charCodeAt(0)+0xFEE0));
+}
+
+function drawGameOverlay(state){
+  gameOverlayG.innerHTML="";
+  if(!state) return;
+
+  const addPanel=(x,y,w,h,rx=18)=>{
+    const r=document.createElementNS("http://www.w3.org/2000/svg","rect");
+    r.setAttribute("x",String(x));r.setAttribute("y",String(y));r.setAttribute("width",String(w));r.setAttribute("height",String(h));r.setAttribute("rx",String(rx));
+    r.setAttribute("fill","rgba(0,0,0,.84)");r.setAttribute("stroke","rgba(255,255,255,.9)");r.setAttribute("stroke-width","2");
+    gameOverlayG.appendChild(r);
+  };
+  const addText=(y,text,size,color="#fff",weight=800)=>{
+    const t=document.createElementNS("http://www.w3.org/2000/svg","text");
+    t.setAttribute("x","351");t.setAttribute("y",String(y));t.setAttribute("text-anchor","middle");t.setAttribute("fill",color);
+    // SVG text の既定はアルファベットのベースライン基準で、日本語フォントでは枠内で上寄りに見える。
+    // 盤面中央の一時表示は文字の中心をY座標として扱い、フォントが変わっても上下中央を維持する。
+    t.setAttribute("dominant-baseline","central");t.setAttribute("alignment-baseline","central");
+    t.setAttribute("font-family",'Noto Sans JP, Noto Sans CJK JP, Yu Gothic, Meiryo, sans-serif');t.setAttribute("font-size",String(size));t.setAttribute("font-weight",String(weight));
+    t.textContent=text;gameOverlayG.appendChild(t);
+  };
+  const addCenteredTextGroup=(panelY,panelH,lines,gap=12)=>{
+    const usable=lines.filter(line=>line&&line.text!==undefined&&line.text!==null);
+    if(!usable.length)return;
+    const totalHeight=usable.reduce((sum,line)=>sum+Number(line.size||0),0)+gap*Math.max(0,usable.length-1);
+    let top=panelY+(panelH-totalHeight)/2;
+    for(const line of usable){
+      const size=Number(line.size)||25;
+      addText(top+size/2,line.text,size,line.color||"#fff",line.weight??800);
+      top+=size+gap;
+    }
+  };
+
+  if(state.phase==="matchStart"){
+    addPanel(96,188,510,170,18);
+    addCenteredTextGroup(188,170,[
+      {text:"試合開始",size:50,weight:900},
+      {text:`${meta.blackName} vs ${meta.whiteName}`,size:40,weight:800}
+    ],18);
+    return;
+  }
+
+  if(state.phase==="matchEnd"){
+    const winner=state.matchWinner;
+    const winnerName=winner==="black"?meta.blackName:winner==="white"?meta.whiteName:"";
+    addPanel(116,150,470,246,18);
+    addCenteredTextGroup(150,246,[
+      {text:"試合終了",size:50,weight:900},
+      {text:"勝者",size:30,weight:800},
+      {text:winnerName,size:50,weight:900}
+    ],15);
+    return;
+  }
+
+  if(state.phase==="gameStart"){
+    // 「第○ゲーム」を50pxで余裕をもって収めるため、ゲーム開始パネルを横方向に拡張する。
+    addPanel(186,232,330,82,14);
+    addCenteredTextGroup(232,82,[{text:`第${state.gameNumber || 1}ゲーム`,size:50,weight:700}]);
+    return;
+  }
+  if(state.phase!=="gameEnd" || !state.scoreDelta) return;
+
+  const winner=state.scoreDelta.winner;
+  const points=Math.max(0,Number(state.scoreDelta.points)||0);
+  const cubeValue=Math.max(1,Number(state.cube?.value)||1);
+  const winMultiplier=Math.max(1,Math.min(3,Math.round(points/cubeValue)||1));
+  const winnerName=winner==="black"?meta.blackName:meta.whiteName;
+  const winLabel=winMultiplier>=3?"バックギャモン勝ち":winMultiplier===2?"ギャモン勝ち":"シングル勝ち";
+  const resultLabel=state.matchResignation?"マッチリザイン":`${winLabel}・キューブ${cubeValue}倍`;
+
+  addPanel(116,165,470,216,18);
+  addCenteredTextGroup(165,216,[
+    {text:winnerName,size:40,weight:800},
+    {text:`＋${toFullWidthScore(points)}`,size:70,color:"#18b86b",weight:900},
+    {text:resultLabel,size:30,weight:800}
+  ],12);
+}
+trianglePoints();
+
+function normalizeThemeColor(value){
+  const text=String(value||"").trim();
+  return /^#[0-9a-fA-F]{6}$/.test(text)?text:"#000000";
+}
+
+function normalizeHex(value,fallback){
+  const text=String(value||"").trim();
+  return /^#[0-9a-fA-F]{6}$/.test(text)?text:fallback;
+}
+function normalizeOptionalDesignColor(value,fallback="#000000"){
+  if(value===undefined) return normalizeHex(fallback,"#000000");
+  if(value===null) return "transparent";
+  const text=String(value).trim();
+  if(!text) return "transparent";
+  const lower=text.toLowerCase();
+  if(lower==="none"||lower==="transparent") return "transparent";
+  return normalizeHex(text,normalizeHex(fallback,"#000000"));
+}
+function contrastText(hex){
+  const color=normalizeHex(hex,"#FFFFFF").slice(1);
+  const r=parseInt(color.slice(0,2),16),g=parseInt(color.slice(2,4),16),b=parseInt(color.slice(4,6),16);
+  const lum=(r*299+g*587+b*114)/1000;
+  return lum>=150?"#111111":"#FFFFFF";
+}
+function gammonTone(hex){
+  const color=normalizeHex(hex,"#808080").slice(1);
+  const rgb=[0,2,4].map(i=>parseInt(color.slice(i,i+2),16));
+  const lum=(rgb[0]*299+rgb[1]*587+rgb[2]*114)/1000;
+  const target=lum>=150?0:255;
+  // Give the gammon layer a clearer lightness separation from the win-rate layer.
+  // Dark checker colors are lightened; light checker colors are darkened.
+  const ratio=0.32;
+  const mixed=rgb.map(v=>Math.round(v*(1-ratio)+target*ratio));
+  return `#${mixed.map(v=>v.toString(16).padStart(2,"0")).join("")}`;
+}
+function findDesignPreset(id){
+  return designPresets.find(p=>p&&p.id===id)||designPresets[0]||FALLBACK_DESIGN;
+}
+const DESIGN_OVERRIDE_KEYS=new Set(["board.surface","board.frame","board.pointLight","board.pointDark","board.pointBorder","checkers.player1","checkers.player2","checkers.border"]);
+function normalizeDesignOverrides(value){
+  if(!value||typeof value!=="object"||Array.isArray(value)) return {};
+  const out={};
+  for(const [key,raw] of Object.entries(value)){
+    if(!DESIGN_OVERRIDE_KEYS.has(key)) continue;
+    if(raw===null){out[key]=null;continue;}
+    const text=String(raw).trim();
+    if(!text||text.toLowerCase()==="none"||text.toLowerCase()==="transparent"){out[key]=null;continue;}
+    if(/^#[0-9a-fA-F]{6}$/.test(text)) out[key]=text;
+  }
+  return out;
+}
+function mergeDesignOverrides(base,overrides){
+  const next={
+    ...base,
+    board:{...(base?.board||{})},
+    checkers:{...(base?.checkers||{})},
+    winRate:{...(base?.winRate||{})}
+  };
+  for(const [key,value] of Object.entries(normalizeDesignOverrides(overrides))){
+    const [group,field]=key.split(".");
+    if(group==="board") next.board[field]=value;
+    else if(group==="checkers") next.checkers[field]=value;
+  }
+  return next;
+}
+function applyDesignPreset(id,overrides=meta.designOverrides){
+  const base=findDesignPreset(id||"green");
+  const normalizedOverrides=normalizeDesignOverrides(overrides);
+  const overrideKey=JSON.stringify(normalizedOverrides);
+  const next=mergeDesignOverrides(base,normalizedOverrides);
+  currentDesign=next;
+  if(appliedDesignPresetId===base.id && appliedDesignOverridesKey===overrideKey) return;
+  appliedDesignPresetId=base.id;
+  appliedDesignOverridesKey=overrideKey;
+  const root=document.documentElement;
+  const checkerPlayer1=normalizeOptionalDesignColor(next.checkers?.player1,"#111111");
+  const checkerPlayer2=normalizeOptionalDesignColor(next.checkers?.player2,"#FFFFFF");
+  root.style.setProperty("--checker-player1",checkerPlayer1);
+  root.style.setProperty("--checker-player2",checkerPlayer2);
+  root.style.setProperty("--die-player1",checkerPlayer1);
+  root.style.setProperty("--die-player2",checkerPlayer2);
+  root.style.setProperty("--die-player1-pip",contrastText(checkerPlayer1));
+  root.style.setProperty("--die-player2-pip",contrastText(checkerPlayer2));
+  // Keep the win-rate bar colors locked to the checker colors.
+  // Any checker color override/preset change must automatically carry over here.
+  const winPlayer1=checkerPlayer1;
+  const winPlayer2=checkerPlayer2;
+  root.style.setProperty("--win-player1",winPlayer1);
+  root.style.setProperty("--win-player2",winPlayer2);
+  root.style.setProperty("--gammon-player1",gammonTone(winPlayer1));
+  root.style.setProperty("--gammon-player2",gammonTone(winPlayer2));
+  const boardSurface=normalizeOptionalDesignColor(next.board?.surface,"#FFFFFF");
+  root.style.setProperty("--board-surface",boardSurface);
+  root.style.setProperty("--board-info-text",contrastText(boardSurface));
+  root.style.setProperty("--point-light",normalizeOptionalDesignColor(next.board?.pointLight,"#FFFFFF"));
+  root.style.setProperty("--point-dark",normalizeOptionalDesignColor(next.board?.pointDark,"#CFCFCF"));
+  root.style.setProperty("--board-bar",normalizeOptionalDesignColor(next.board?.bar,"#111111"));
+  const boardFrame=normalizeOptionalDesignColor(next.board?.frame,"#000000");
+  const pointBorder=normalizeOptionalDesignColor(next.board?.pointBorder,next.board?.frame||"#000000");
+  const hasCheckerBorder=checkerBorderEnabled(next);
+  const checkerBorder=normalizeOptionalDesignColor(next.checkers?.border,next.board?.frame||"#000000");
+  root.style.setProperty("--board-line",boardFrame);
+  root.style.setProperty("--point-border",pointBorder);
+  root.style.setProperty("--checker-border",checkerBorder);
+  root.style.setProperty("--checker-border-width",hasCheckerBorder?String(CHECKER_BORDER_WIDTH):"0");
+
+  const directBg=boardSvg.firstElementChild;
+  if(directBg&&directBg.tagName.toLowerCase()==="rect") directBg.setAttribute("fill",boardSurface);
+  const baseRects=[...document.querySelectorAll("#boardBase rect")];
+  if(baseRects[0]) baseRects[0].setAttribute("fill",boardSurface);
+  if(baseRects[1]) baseRects[1].setAttribute("fill",boardFrame);
+  if(baseRects[2]) baseRects[2].setAttribute("fill",boardFrame);
+  document.querySelectorAll("#boardBase rect, #boardBase line").forEach(el=>el.setAttribute("stroke",boardFrame));
+  trianglePoints();
+}
+async function loadDesignPresets(){
+  try{
+    const u=new URL("./design-presets.json",location.href);u.searchParams.set("t",Date.now());
+    const r=await fetch(u,{cache:"no-store"});
+    if(!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data=await r.json();
+    if(Array.isArray(data.presets)&&data.presets.length) designPresets=data.presets;
+  }catch(error){
+    console.warn("Failed to load design presets; using fallback.",error);
+    designPresets=[FALLBACK_DESIGN];
+  }
+  appliedDesignPresetId="";
+  appliedDesignOverridesKey="";
+  applyDesignPreset(meta.designPreset||"green",meta.designOverrides);
+  render();
+}
+
+function ensureHistoryHeader(el){
+  if(!el)return {pr:null,name:null};
+  let pr=el.querySelector('.history-pr');
+  let name=el.querySelector('.history-name-text');
+  if(!pr||!name){
+    el.textContent='';
+    pr=document.createElement('span');pr.className='history-pr';
+    name=document.createElement('span');name.className='history-name-text';
+    el.append(pr,name);
+  }
+  return {pr,name};
+}
+function renderHistoryHeader(el,prValue,nameText){
+  const parts=ensureHistoryHeader(el);
+  if(parts.pr)parts.pr.textContent=Number(prValue||0).toFixed(2);
+  if(parts.name)parts.name.textContent=nameText||'';
+}
+function renderMeta(state){
+  document.documentElement.style.setProperty("--theme-color",normalizeThemeColor(meta.themeColor));
+  applyDesignPreset(meta.designPreset||"green",meta.designOverrides);
+  els.tournamentTitleLine1.textContent=meta.tournamentTitleLine1;
+  els.tournamentTitleLine2.textContent=meta.tournamentTitleLine2||"";
+  els.blackName.textContent=meta.blackName;els.whiteName.textContent=meta.whiteName;
+  renderHistoryHeader(els.blackHistoryName,state?.pr?.black,meta.blackName);
+  renderHistoryHeader(els.whiteHistoryName,state?.pr?.white,meta.whiteName);
+  const score=state?.score||[meta.blackScore,meta.whiteScore];
+  const blackGain=state?.scoreDelta?.winner==='black'?Number(state.scoreDelta.points)||0:0;
+  const whiteGain=state?.scoreDelta?.winner==='white'?Number(state.scoreDelta.points)||0:0;
+  function renderScoreValue(el,value,gain){
+    if(!el)return;
+    const isTwoDigits=v=>Math.abs(Math.trunc(Number(v)||0))>=10;
+    const gainNow=gain>0;
+    if(gainNow){
+      const oldScore=Number(value)||0;
+      const newScore=oldScore+gain;
+      const key=`${state?.gameNumber||0}-${index}-${oldScore}-${gain}-${newScore}`;
+      el.classList.remove('score-two-digit');
+      if(el.dataset.scoreGainKey!==key){
+        el.dataset.scoreGainKey=key;
+        el.classList.add('is-score-transition');
+        el.innerHTML=`<span class="score-number score-number-old${isTwoDigits(oldScore)?' score-two-digit':''}">${toFullWidthScore(oldScore)}</span><span class="score-number score-number-gain">＋${toFullWidthScore(gain)}</span><span class="score-number score-number-new${isTwoDigits(newScore)?' score-two-digit':''}">${toFullWidthScore(newScore)}</span>`;
+      }
+    }else{
+      el.dataset.scoreGainKey='';
+      el.classList.remove('is-score-transition');
+      el.classList.toggle('score-two-digit',isTwoDigits(value));
+      el.textContent=toFullWidthScore(value);
+    }
+  }
+  renderScoreValue(els.blackScore,score[0]??meta.blackScore,blackGain);
+  renderScoreValue(els.whiteScore,score[1]??meta.whiteScore,whiteGain);
+}
+function diePips(face){return {1:[[18,18]],2:[[10,10],[26,26]],3:[[10,10],[18,18],[26,26]],4:[[10,10],[26,10],[10,26],[26,26]],5:[[10,10],[26,10],[18,18],[10,26],[26,26]],6:[[10,9],[26,9],[10,18],[26,18],[10,27],[26,27]]}[face]||[];}
+function diePlayerClass(player){return player===1||player==="black"?"player1":"player2";}
+function renderDie(face,player){
+  const dots=diePips(face).map(([cx,cy])=>`<circle class="die-svg-pip" cx="${cx}" cy="${cy}" r="3.4"></circle>`).join("");
+  return `<svg class="die ${diePlayerClass(player)}" viewBox="0 0 36 36" aria-hidden="true"><rect class="die-face" x="0.75" y="0.75" width="34.5" height="34.5" rx="4"></rect>${dots}</svg>`;
+}
+function renderPair(pair,player){return pair&&pair.length===2?`<div class="dice-pair-inline">${renderDie(pair[0],player)}${renderDie(pair[1],player)}</div>`:'<div class="dice-pair-inline"></div>';}
+function renderHistoryCube(value){
+  const raw=String(value??"").trim().toUpperCase();
+  const shown=raw==="P"?"P":Math.max(2,Number(value)||2);
+  return `<div class="history-cube-pair"><span class="history-icon-spacer"></span><span class="history-cube-icon">${shown}</span></div>`;
+}
+function historyClass(error){
+  const loss=Math.abs(Number(error)||0);
+  if(loss>=0.080)return"history-blunder";
+  if(loss>=0.020)return"history-error";
+  return"";
+}
+function candidateErrorClass(error){const value=Number(error);if(value<=-0.080)return"error-purple";if(value<=-0.020)return"error-red";return"";}
+function historyMoveLabel(move){
+  const labels={
+    "Double":"ダブル",
+    "Take":"テイク",
+    "Pass":"パス",
+    "Resign":"リザイン",
+    "Cannot Move":"ムーブできない",
+    "Dance":"ムーブできない",
+    "No Double":"ノーダブル",
+    "No Doubke":"ノーダブル"
+  };
+  return labels[move]??(move||"");
+}
+function historyEventSegment(event,player,{compact=false}={}){
+  if(!event)return "";
+  const cubeKind=event.kind==="cube"||event.kind==="cubeResponse";
+  const icon=cubeKind
+    ? (compact
+        ? `<span class="history-cube-icon history-cube-icon-compact">${event.kind==="cubeResponse"&&event.move==="Pass"?"P":Math.max(2,Number(event.cubeValue)||2)}</span>`
+        : renderHistoryCube(event.kind==="cubeResponse"&&event.move==="Pass"?"P":event.cubeValue))
+    : renderPair(event.dice,player);
+  const moveLabel=event.kind==="noRoll"?"ロールできない":historyMoveLabel(event.move);
+  return `<div class="history-event-segment${compact?" is-compact":""} ${historyClass(event.error)}">${icon}<span class="history-move">${moveLabel}</span></div>`;
+}
+function historyCell(events,player,isCurrent=false){
+  const list=Array.isArray(events)?events.filter(Boolean):(events?[events]:[]);
+  if(!list.length)return `<div class="history-cell${isCurrent?" is-current":""}"></div>`;
+  const packed=list.length>1;
+  const classes=[...new Set(list.map(event=>historyClass(event.error)).filter(Boolean))];
+  return `<div class="history-cell ${classes.join(" ")}${isCurrent?" is-current":""}${packed?" is-packed":""}">${list.map(event=>historyEventSegment(event,player,{compact:packed&&event.kind?.startsWith("cube")})).join("")}</div>`;
+}
+function rowEvents(row,player){
+  if(!row)return [];
+  const value=row[player];
+  if(Array.isArray(value))return value;
+  if(value){row[player]=[value];return row[player];}
+  row[player]=[];return row[player];
+}
+function rowHasCheckerEvent(row,player){
+  return rowEvents(row,player).some(event=>event&&!["cube","cubeResponse"].includes(event.kind));
+}
+function appendHistoryEvent(row,player,event,{replaceRoll=false}={}){
+  const events=rowEvents(row,player);
+  if(replaceRoll){
+    for(let i=events.length-1;i>=0;i--){
+      if(events[i]?.kind==="roll"){events[i]=event;return;}
+    }
+  }
+  events.push(event);
+}
+function newHistoryActionRow(rows){
+  const row={kind:"actions",black:[],white:[]};
+  rows.push(row);
+  return row;
+}
+function collectHistoryRows(){
+  const rows=[];
+  const cubeRows=new Map();
+  let leadPlayer=null;
+  let openMoveRow=null;
+  let lastCubeActionRow=null;
+  for(let stateIndex=0;stateIndex<=index&&stateIndex<matchData.states.length;stateIndex++){
+    const state=matchData.states[stateIndex];
+    if(!state)continue;
+    if(state.phase==="gameStart"){
+      rows.push({kind:"game",gameNumber:Number(state.gameNumber)||1});
+      leadPlayer=null;openMoveRow=null;lastCubeActionRow=null;cubeRows.clear();
+      continue;
+    }
+
+    // 各ゲームで最初に手番を迎えた側を先行とする。
+    // Double直後は空きへ詰められる場合があるが、Take/Pass確定後は openMoveRow を閉じて次行から始める。
+    if(state.phase==="preRoll"){
+      const turnPlayer=state.activePlayer===1?"black":(state.activePlayer===-1?"white":null);
+      if(turnPlayer){
+        if(!leadPlayer)leadPlayer=turnPlayer;
+        const canReuseCubeRow=lastCubeActionRow&&!rowEvents(lastCubeActionRow,turnPlayer).some(Boolean);
+        if(canReuseCubeRow){
+          openMoveRow=lastCubeActionRow;
+        }else if(turnPlayer===leadPlayer){
+          openMoveRow=newHistoryActionRow(rows);
+        }
+      }
+    }
+
+    // Double候補は、その手が実際に入る履歴セルを候補時点から確保する。
+    // 先攻側は前の1行が埋まっていれば改行するが、後攻側は同じ行の自分側セルが空いていれば
+    // ロール／ムーブと同様にその空きを使い、不要な改行をしない。
+    if(state.phase==="cubeOffer"){
+      const offerer=state.activePlayer===1?"black":(state.activePlayer===-1?"white":null);
+      let row=openMoveRow;
+      const ownCellEmpty=offerer&&row&&!rowEvents(row,offerer).some(Boolean);
+      const isFollower=offerer&&leadPlayer&&offerer!==leadPlayer;
+      if(!row||(isFollower?!ownCellEmpty:[...rowEvents(row,"black"),...rowEvents(row,"white")].some(Boolean))){
+        row=newHistoryActionRow(rows);
+      }
+      openMoveRow=row;
+      lastCubeActionRow=null;
+    }
+
+    // Take / Pass候補も、候補時点から実際に応答が入るセルを薄金表示できるよう行を確保する。
+    // Double行の応答側が空いていれば同じ行、すでに埋まっていれば次の行を使う。
+    if(state.phase==="cubeResponse"){
+      const responder=state.activePlayer===1?"black":(state.activePlayer===-1?"white":null);
+      const pairedRow=lastCubeActionRow;
+      if(responder){
+        if(pairedRow&&!rowEvents(pairedRow,responder).some(Boolean)){
+          openMoveRow=pairedRow;
+        }else{
+          const currentCanUse=openMoveRow&&openMoveRow!==pairedRow&&!rowEvents(openMoveRow,responder).some(Boolean);
+          if(!currentCanUse)openMoveRow=newHistoryActionRow(rows);
+        }
+      }
+    }
+
+    // 大逆転の暗転中は、次にロール／ムーブが入る履歴セルを先に確保する。
+    // 直前の手に金塗りを残さず、次の手番の空白セルを薄金表示する。
+    // 実際のロール時もこの準備済み行をそのまま使うため、暗転解除時に余計な改行が入らない。
+    if(state.phase==="bigComebackIntro"){
+      const turnPlayer=state.activePlayer===1?"black":(state.activePlayer===-1?"white":null);
+      if(turnPlayer){
+        if(!leadPlayer)leadPlayer=turnPlayer;
+        let row=openMoveRow;
+        if(!row||rowEvents(row,turnPlayer).some(Boolean))row=newHistoryActionRow(rows);
+        openMoveRow=row;
+        lastCubeActionRow=null;
+      }
+    }
+
+    // Legacy generated JSON compatibility.
+    const grouped=Array.isArray(state.historyEvents)?state.historyEvents.filter(Boolean):[];
+    if(grouped.length){
+      const row=newHistoryActionRow(rows);
+      for(const event of grouped){if(event.player==="black"||event.player==="white")appendHistoryEvent(row,event.player,event);}
+      openMoveRow=null;lastCubeActionRow=null;continue;
+    }
+
+    const event=state.historyEvent;
+    if(event&&(event.player==="black"||event.player==="white")){
+      if(event.kind==="cube"){
+        // cubeOffer では候補表示用に新しい空行を用意するが、実際に Double を選んだ時は
+        // 直前行の自分側セルが空いていれば、その空行を捨てて上の行へ詰めて表示する。
+        // これにより候補時点の改行は維持しつつ、確定後の Double だけが不要に1行下へ残らない。
+        let row=openMoveRow;
+        const rowIsEmpty=row&&![...rowEvents(row,"black"),...rowEvents(row,"white")].some(Boolean);
+        if(event.move==="Double"&&rowIsEmpty&&rows[rows.length-1]===row){
+          const previousRow=rows.length>=2?rows[rows.length-2]:null;
+          const canPackUp=previousRow?.kind==="actions"&&!rowEvents(previousRow,event.player).some(Boolean);
+          if(canPackUp){
+            rows.pop();
+            row=previousRow;
+          }
+        }
+        // その側が空いている既存行ならそこへ詰め、埋まっていれば新しい行を作る。
+        if(!row||rowHasCheckerEvent(row,event.player)||rowEvents(row,event.player).some(Boolean))row=newHistoryActionRow(rows);
+        appendHistoryEvent(row,event.player,event);
+        openMoveRow=row;
+        lastCubeActionRow=row;
+        if(event.pairId)cubeRows.set(event.pairId,row);
+        continue;
+      }
+      if(event.kind==="cubeResponse"){
+        const pairedRow=event.pairId?cubeRows.get(event.pairId):null;
+        const pairedOffer=pairedRow
+          ? [...rowEvents(pairedRow,"black"),...rowEvents(pairedRow,"white")].find(item=>item?.kind==="cube")
+          : null;
+        const responseEvent=event.cubeValue?event:{...event,cubeValue:pairedOffer?.cubeValue};
+        // Take / Pass は、対応するダブル行の相手側セルが空いていれば同じ行へ詰める。
+        // ただし、その後のロールは別行から始める（同じ選手欄の1行に2アクションは置かない）。
+        if(pairedRow&&!rowEvents(pairedRow,event.player).some(Boolean)){
+          appendHistoryEvent(pairedRow,event.player,responseEvent);
+          openMoveRow=pairedRow;
+          lastCubeActionRow=pairedRow;
+          continue;
+        }
+        // cubeResponse候補時点で用意した空行があれば、そのまま確定表示に使う。
+        // これにより候補の薄金セルと、確定後のTake / Passの位置がずれない。
+        let row=openMoveRow;
+        const canUsePreparedRow=row&&row!==pairedRow&&!rowEvents(row,event.player).some(Boolean);
+        if(!canUsePreparedRow)row=newHistoryActionRow(rows);
+        appendHistoryEvent(row,event.player,responseEvent);
+        openMoveRow=row;
+        lastCubeActionRow=row;
+        continue;
+      }
+      if(!leadPlayer)leadPlayer=event.player;
+      // 1選手・1行につき1アクションだけ表示する。
+      // 既にロールがある場合のみ、その同じ場所を着手結果で上書きする。
+      if(!openMoveRow){openMoveRow=newHistoryActionRow(rows);}
+      let events=rowEvents(openMoveRow,event.player);
+      let hasRoll=events.some(item=>item?.kind==="roll");
+      const hasOtherAction=events.some(item=>item?.kind!=="roll");
+      if(hasOtherAction){
+        openMoveRow=newHistoryActionRow(rows);
+        events=rowEvents(openMoveRow,event.player);
+        hasRoll=false;
+      }
+      appendHistoryEvent(openMoveRow,event.player,event,{replaceRoll:hasRoll});
+      lastCubeActionRow=null;
+      continue;
+    }
+
+    // ロールした瞬間は、通常の空き行には詰める。Take/Pass直後は必ず新しい行から始める。
+    // 着手確定時にはこの roll セグメントを同じ場所でムーブ表示へ置き換える。
+    if(state.phase==="roll"&&Array.isArray(state.dice)){
+      const turnPlayer=state.activePlayer===1?"black":(state.activePlayer===-1?"white":null);
+      if(turnPlayer){
+        if(!leadPlayer)leadPlayer=turnPlayer;
+        let row=openMoveRow;
+        const canReuseCubeRow=lastCubeActionRow&&!rowEvents(lastCubeActionRow,turnPlayer).some(Boolean);
+        if(canReuseCubeRow)row=lastCubeActionRow;
+        let events=row?rowEvents(row,turnPlayer):[];
+        const noDoubleIndex=events.findIndex(item=>item?.kind==="cube"&&(item?.move==="No Double"||item?.move==="No Doubke"));
+        // ノーダブルだけは、実際のロールが出た瞬間に同じ場所へ上書きする。
+        // それ以外に既存アクションがあるセルへは追記せず、新しい行へ送る。
+        if(!row||(events.length>0&&noDoubleIndex<0)){
+          row=newHistoryActionRow(rows);
+          events=rowEvents(row,turnPlayer);
+        }
+        const rollEvent={player:turnPlayer,dice:state.dice,move:"",error:0,kind:"roll"};
+        const replaceNoDoubleIndex=events.findIndex(item=>item?.kind==="cube"&&(item?.move==="No Double"||item?.move==="No Doubke"));
+        if(replaceNoDoubleIndex>=0)events[replaceNoDoubleIndex]=rollEvent;
+        else appendHistoryEvent(row,turnPlayer,rollEvent);
+        openMoveRow=row;
+      }
+    }
+  }
+  return rows.slice(-4);
+}
+function renderHistory(){
+  const rows=collectHistoryRows();
+  // v36で履歴DOM構造を変更したため、Pages/OBSのキャッシュでHTMLとJSの
+  // 世代が一時的にずれても描画全体を止めないよう新旧DOMの両方に対応する。
+  if(els.historyList){
+    const padded=[...Array(Math.max(0,4-rows.length)).fill(null),...rows].slice(-4);
+    const state=currentState();
+    const currentPlayer=state?.activePlayer===1?"black":(state?.activePlayer===-1?"white":null);
+    const highlightEnabled=currentPlayer&&!['gameStart','gameEnd','matchStart','matchEnd','empty'].includes(state?.phase);
+    let currentRowIndex=-1;
+    if(highlightEnabled){
+      for(let i=padded.length-1;i>=0;i--){
+        if(padded[i]?.kind==="actions"){currentRowIndex=i;break;}
+      }
+    }
+    els.historyList.innerHTML=padded.map((row,rowIndex)=>{
+      if(!row)return `<div class="history-timeline-row history-empty-row">${historyCell(null,"black")}${historyCell(null,"white")}</div>`;
+      if(row.kind==="game")return `<div class="history-timeline-row history-game-row"><div class="history-game-label">第${row.gameNumber}ゲーム</div></div>`;
+      const blackCurrent=rowIndex===currentRowIndex&&currentPlayer==="black";
+      const whiteCurrent=rowIndex===currentRowIndex&&currentPlayer==="white";
+      return `<div class="history-timeline-row">${historyCell(row.black,"black",blackCurrent)}${historyCell(row.white,"white",whiteCurrent)}</div>`;
+    }).join("");
+    return;
+  }
+  if(els.blackHistoryList&&els.whiteHistoryList){
+    els.blackHistoryList.innerHTML=rows.map(row=>row.kind==="game"?`<div class="history-row">第${row.gameNumber}ゲーム</div>`:historyCell(row.black,"black")).join("");
+    els.whiteHistoryList.innerHTML=rows.map(row=>row.kind==="game"?'<div class="history-row"></div>':historyCell(row.white,"white")).join("");
+  }
+}
+function renderAnalysis(a){
+  if(!a||a.type==="none"){els.analysisContent.innerHTML="";return;}
+  if(a.type==="jokers"){
+    const activePlayer=currentState().activePlayer===1?1:-1;
+    // 新ロジックはチャンス／ピンチを各1面だけ表示する。
+    // 旧生成データでは従来の出目配列表示へフォールバックする。
+    if(Number(a.jokerFace)||Number(a.antiJokerFace)){
+      const items=[];
+      if(Number(a.jokerFace))items.push({kind:"plus",face:Number(a.jokerFace)});
+      if(Number(a.antiJokerFace))items.push({kind:"minus",face:Number(a.antiJokerFace)});
+      const html=items.map(item=>{
+        const label=item.kind==="plus"?"チャンス！":"ピンチ！";
+        return `<div class="joker-glow ${item.kind} is-single-face"><div class="joker-label">${label}</div><div class="single-die-block">${renderDie(item.face,activePlayer)}</div></div>`;
+      }).join("");
+      els.analysisContent.innerHTML=`<div class="analysis-jokers">${html}</div>`;return;
+    }
+    const rollOrder=[
+      [6,6],[6,5],[6,4],[6,3],[6,2],[6,1],
+      [5,5],[5,4],[5,3],[5,2],[5,1],
+      [4,4],[4,3],[4,2],[4,1],
+      [3,3],[3,2],[3,1],
+      [2,2],[2,1],[1,1]
+    ];
+    const key=d=>{
+      const x=Number(d?.[0]),y=Number(d?.[1]);
+      return Number.isFinite(x)&&Number.isFinite(y)?`${Math.max(x,y)}-${Math.min(x,y)}`:"";
+    };
+    const orderedItems=(rolls,kind)=>{
+      const keys=new Set((Array.isArray(rolls)?rolls:[]).map(key).filter(Boolean));
+      const fullFaces=new Set();
+      for(let face=1;face<=6;face++){
+        const related=[1,2,3,4,5,6].map(other=>`${Math.max(face,other)}-${Math.min(face,other)}`);
+        if(related.every(k=>keys.has(k))) fullFaces.add(face);
+      }
+      const emittedFaces=new Set();
+      const items=[];
+      for(const dice of rollOrder){
+        const diceKey=key(dice);
+        if(!keys.has(diceKey)) continue;
+        const groupedFaces=[...fullFaces].filter(face=>dice.includes(face)&&!emittedFaces.has(face));
+        if(groupedFaces.length){
+          const face=groupedFaces.sort((a,b)=>b-a)[0];
+          emittedFaces.add(face);
+          items.push({kind,face,single:true});
+          continue;
+        }
+        if([...fullFaces].some(face=>dice.includes(face))) continue;
+        items.push({kind,dice,single:false});
+      }
+      return items;
+    };
+    const renderItem=item=>{
+      const label=item.kind==="plus"?"チャンス！":"ピンチ！";
+      if(item.single){
+        return `<div class="joker-glow ${item.kind} is-single-face"><div class="joker-label">${label}</div><div class="single-die-block">${renderDie(item.face,activePlayer)}</div></div>`;
+      }
+      return `<div class="joker-glow ${item.kind}"><div class="joker-label">${label}</div><div class="dice-pair-block">${renderDie(item.dice[0],activePlayer)}${renderDie(item.dice[1],activePlayer)}</div></div>`;
+    };
+    // 表示順は固定：チャンスを先に、その後にピンチ。
+    // 各カテゴリ内は 66,65,64,63,62,61,55,...,21,11 の順で対象出目だけを表示する。
+    const chanceItems=orderedItems(a.joker,"plus");
+    const pinchItems=orderedItems(a.antiJoker,"minus");
+    const items=[...chanceItems,...pinchItems];
+    els.analysisContent.innerHTML=`<div class="analysis-jokers${items.length>6?" is-many":""}">${items.map(renderItem).join("")}</div>`;return;
+  }
+  const selectedIndex=Number.isInteger(a.playedIndex)?a.playedIndex:-1;
+  const all=a.candidates||[];
+  const candidateEntries=all.map((candidate,index)=>({candidate,index}));
+  const cubeDecision=["cubeOffer","cubeOfferSelect","cubeResponse","cubeResponseSelect"].includes(currentState()?.phase);
+  if(cubeDecision){
+    // Double / No Double、Take / Pass は最善（error=0 に最も近い手）を常に1行目へ。
+    candidateEntries.sort((left,right)=>{
+      const diff=Number(right.candidate?.error??-Infinity)-Number(left.candidate?.error??-Infinity);
+      return diff || left.index-right.index;
+    });
+  }else{
+    // チェッカームーブの候補は、XGファイル内の格納順ではなくエクイティ上位順に表示する。
+    // XGでは実際の着手が上位に差し込まれている場合があるため、候補時点では純粋な上位5手を見せる。
+    candidateEntries.sort((left,right)=>{
+      const leftEq=Number(left.candidate?.equity);
+      const rightEq=Number(right.candidate?.equity);
+      if(Number.isFinite(leftEq)&&Number.isFinite(rightEq)){
+        const diff=rightEq-leftEq;
+        if(diff)return diff;
+      }else if(Number.isFinite(rightEq)){
+        return 1;
+      }else if(Number.isFinite(leftEq)){
+        return -1;
+      }
+      const errorDiff=Number(right.candidate?.error??-Infinity)-Number(left.candidate?.error??-Infinity);
+      return errorDiff || left.index-right.index;
+    });
+  }
+  const bestIndex=candidateEntries[0]?.index??-1;
+  const showBestMarker=all.length>1;
+  let visible=candidateEntries.slice(0,5);
+  // 実際の選択手がエクイティ6位以下なら、選択時だけ5行目をその手に置き換える。
+  if(selectedIndex>=0 && all[selectedIndex] && !visible.some(entry=>entry.index===selectedIndex)){
+    const entry={candidate:all[selectedIndex],index:selectedIndex};
+    if(visible.length<5)visible.push(entry);else visible[4]=entry;
+  }
+  const rows=visible.map(({candidate:c,index:i})=>{
+    const errorClass=candidateErrorClass(c.error);
+    const selected=i===selectedIndex;
+    const selectedClass=selected?(errorClass==="error-purple"?" is-selected is-selected-blunder":errorClass==="error-red"?" is-selected is-selected-error":" is-selected"):"";
+    // 候補が複数ある場合のみ最善手を BEST と表示する。
+    // 1候補しかない強制手・ムーブ不能では、BEST / 0.000 のどちらも表示しない。
+    const equityLabel=!showBestMarker?"":(i===bestIndex?"BEST":Number(c.error??0).toFixed(3));
+    return `<div class="analysis-row${selectedClass}"><span class="analysis-move">${historyMoveLabel(c.move)}</span><span class="analysis-eq ${errorClass}">${equityLabel}</span></div>`;
+  });
+  while(rows.length<5) rows.push('<div class="analysis-row analysis-row-empty"><span class="analysis-move"></span><span class="analysis-eq"></span></div>');
+  els.analysisContent.innerHTML=`<div class="analysis-moves">${rows.slice(0,5).join("")}</div>`;
+}
+function currentState(){return matchData.states[Math.max(0,Math.min(index,matchData.states.length-1))]||emptyState;}
+function resetBoardDimOverlay(){
+  lastBoardDimKey="";
+  const el=els.boardDimOverlay;if(!el)return;
+  el.classList.remove("is-active","is-release");
+  el.setAttribute("aria-hidden","true");
+}
+function renderBoardDimOverlay(state){
+  const dim=els.boardDimOverlay;
+  const isIntro=state?.phase==="bigComebackIntro" && Boolean(state?.bigComeback);
+  const isImpact=state?.phase==="roll" && state?.rollNotice==="comeback";
+
+  // 1段目：6秒を丸ごと使って、盤面だけをゆっくり暗転させる。
+  if(isIntro){
+    els.stage?.classList.remove("is-comeback-impact");
+    els.winrateBar?.classList.remove("is-comeback-impact","is-player-left","is-player-right");
+    lastComebackFxKey="";
+    if(!dim)return;
+    const key=`${index}:${state.gameNumber||0}:${state.activePlayer||0}:dim`;
+    if(key!==lastBoardDimKey){
+      lastBoardDimKey=key;
+      dim.classList.remove("is-active","is-release");
+      void dim.offsetWidth;
+      dim.setAttribute("aria-hidden","false");
+      dim.classList.add("is-active");
+    }
+    return;
+  }
+
+  // 2段目：ロール確定時は暗転を解除しながら、勝率バー・雷・盤面衝撃を同時に発火。
+  if(isImpact){
+    const key=`${index}:${state.gameNumber||0}:${state.activePlayer||0}:impact`;
+    if(key===lastComebackFxKey)return;
+    lastComebackFxKey=key;
+    if(dim){
+      dim.classList.remove("is-active");
+      dim.setAttribute("aria-hidden","false");
+      dim.classList.add("is-release");
+    }
+    const sideClass=state.activePlayer===1?"is-player-left":"is-player-right";
+    els.stage?.classList.remove("is-comeback-impact");
+    els.winrateBar?.classList.remove("is-comeback-impact","is-player-left","is-player-right");
+    void (els.stage?.offsetWidth||0);
+    els.stage?.classList.add("is-comeback-impact");
+    els.winrateBar?.classList.add("is-comeback-impact",sideClass);
+    return;
+  }
+
+  resetBoardDimOverlay();
+  lastComebackFxKey="";
+  els.stage?.classList.remove("is-comeback-impact");
+  els.winrateBar?.classList.remove("is-comeback-impact","is-player-left","is-player-right");
+}
+function escapeHtml(value){return String(value).replace(/[&<>"']/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[ch]));}
+function achievementSourceForMoveState(state){
+  if(!state)return null;
+  // シチュエーションは「出目」ではなく、実際にその着手結果が盤面へ反映される瞬間に表示する。
+  // ノーコンタクト統合手番や Cannot Move / Dance は roll 状態そのものが手番確定タイミング。
+  if(state.phase==="roll" && (state.noContactCombined || state.forcedMove || state?.historyEvent?.move==="Cannot Move")){
+    return state;
+  }
+  const isMoveState=state.phase==="analysis" || (state.phase==="candidates" && state.forcedMove);
+  if(!isMoveState)return null;
+  const diceKey=Array.isArray(state.dice)?state.dice.join("-"):"";
+  for(let i=index-1;i>=Math.max(0,index-4);i--){
+    const prev=matchData.states[i];
+    if(prev?.gameNumber!==state.gameNumber)break;
+    if(prev?.phase!=="roll")continue;
+    const prevDiceKey=Array.isArray(prev.dice)?prev.dice.join("-"):"";
+    if(prev.activePlayer===state.activePlayer && prevDiceKey===diceKey)return prev;
+  }
+  return null;
+}
+function renderAchievements(state){
+  const el=els.achievementOverlay;if(!el)return;
+  const source=achievementSourceForMoveState(state);
+  const raw=Array.isArray(source?.achievements) ? source.achievements : [];
+  const items=raw.map(item=>{
+    if(typeof item==="string")return {id:item,label:item};
+    return {id:String(item?.id||item?.label||""),label:String(item?.label||item?.id||"")};
+  }).filter(item=>item.label);
+  if(!items.length){
+    lastAchievementKey="";
+    el.getAnimations?.().forEach(a=>a.cancel());
+    el.innerHTML="";
+    el.classList.remove("is-active");
+    el.setAttribute("aria-hidden","true");
+    return;
+  }
+  const key=`${index}:${items.map(item=>item.id).join("|")}`;
+  el.setAttribute("aria-hidden","false");
+  if(key===lastAchievementKey)return;
+  lastAchievementKey=key;
+  el.getAnimations?.().forEach(a=>a.cancel());
+  el.classList.remove("is-active");
+  // 複数シチュエーションが同時成立した場合は、同じ演出ブロック内で2行以上に積んで同時表示する。
+  const lines=items.map(item=>`<span class="achievement-line">${escapeHtml(item.label)}</span>`).join("");
+  el.innerHTML=`<div class="achievement-fly${items.length>1?" is-multiline":""}">${lines}</div>`;
+  void el.offsetWidth;
+  el.classList.add("is-active");
+
+  // CSS animationだけに依存せず、実際のムーブ確定時にJSから確実に発火させる。
+  // 右から出現 → 中央で静止 → 左へ抜けて消える。複数行も1ブロックとして同時に移動する。
+  const duration=scaledSequenceDelay(6000);
+  const node=el.querySelector(".achievement-fly");
+  if(node){
+    if(typeof node.animate==="function"){
+      node.classList.add("is-js-animated");
+      node.animate([
+        {opacity:0,transform:"translate(calc(-50% + 760px),-50%)",offset:0},
+        {opacity:1,transform:"translate(-50%,-50%)",offset:.083333},
+        {opacity:1,transform:"translate(-50%,-50%)",offset:.916667},
+        {opacity:0,transform:"translate(calc(-50% - 760px),-50%)",offset:1}
+      ],{duration,easing:"ease-in-out",fill:"both"});
+    }else{
+      node.style.animationDuration=`${duration}ms`;
+      node.style.animationDelay="0ms";
+    }
+  }
+}
+function renderBigComeback(state){
+  const el=els.bigComebackText;if(!el)return;
+  // intro は暗転だけ。大逆転／ナイス／バッドの文字は実際のロールから表示する。
+  const notice=state?.phase!=="bigComebackIntro" ? state?.rollNotice : null;
+  const isVisible=notice==="comeback" || notice==="nice" || notice==="bad";
+  if(!isVisible){
+    lastBigComebackKey="";
+    el.classList.remove("is-active","is-comeback","is-nice","is-bad","is-player-left","is-player-right");
+    el.setAttribute("aria-hidden","true");
+    return;
+  }
+  el.textContent=notice==="comeback"?"大逆転！":(notice==="bad"?"バッドロール…":"ナイスロール！");
+  el.classList.toggle("is-comeback",notice==="comeback");
+  el.classList.toggle("is-nice",notice==="nice");
+  el.classList.toggle("is-bad",notice==="bad");
+  el.classList.toggle("is-player-left",state.activePlayer===1);
+  el.classList.toggle("is-player-right",state.activePlayer===-1);
+  const key=`${state.gameNumber||0}:${state.activePlayer||0}:${notice}`;
+  el.setAttribute("aria-hidden","false");
+  if(key===lastBigComebackKey) return;
+  lastBigComebackKey=key;
+  el.classList.remove("is-active");
+  void el.offsetWidth;
+  el.classList.add("is-active");
+}
+function render(){
+  const s=currentState();
+  // 手番変更後のpreRollでは盤面もまだ変化していないため、勝率バー類は直前の表示値を維持する。
+  // 実際のロール状態に進んだ瞬間だけ、そのロール後の解析値へアニメーションさせる。
+  const previousState=index>0?matchData.states[index-1]:null;
+  const rateState=(s?.phase==="preRoll"&&previousState?.gameNumber===s.gameNumber)?previousState:s;
+  const b=Number(rateState?.winRate?.black??50),w=Number(rateState?.winRate?.white??(100-b));renderMeta(s);
+  const gb=Math.max(0,Math.min(b,Number(rateState?.gammonRate?.black??0)));
+  const gw=Math.max(0,Math.min(w,Number(rateState?.gammonRate?.white??0)));
+  const rawBgb=Math.max(0,Number(rateState?.backgammonRate?.black??0));
+  const rawBgw=Math.max(0,Number(rateState?.backgammonRate?.white??0));
+  const bgb=Math.max(0,Math.min(gb,rawBgb));
+  const bgw=Math.max(0,Math.min(gw,rawBgw));
+  const showBgb=bgb>=5;
+  const showBgw=bgw>=5;
+  const displayBlack=Math.round(b),displayWhite=100-displayBlack;
+  els.winBarBlack.style.width=`${b}%`;els.winBarWhite.style.width=`${w}%`;
+  els.winBarBlack.classList.toggle("is-zero",b<=0);
+  els.winBarWhite.classList.toggle("is-zero",w<=0);
+  els.gammonBarBlack.style.width=`${gb}%`;els.gammonBarWhite.style.width=`${gw}%`;
+  els.gammonBarBlack.classList.toggle("is-zero",gb<=0);els.gammonBarWhite.classList.toggle("is-zero",gw<=0);
+  els.backgammonBarBlack.style.width=`${showBgb?bgb:0}%`;els.backgammonBarWhite.style.width=`${showBgw?bgw:0}%`;
+  els.backgammonBarBlack.classList.toggle("is-zero",!showBgb);els.backgammonBarWhite.classList.toggle("is-zero",!showBgw);
+  els.blackRateText.innerHTML=`${displayBlack}<span class="bar-rate-percent">%</span>`;els.whiteRateText.innerHTML=`${displayWhite}<span class="bar-rate-percent">%</span>`;
+  const blackGText=`G ${Math.round(gb)}%`;
+  const whiteGText=`G ${Math.round(gw)}%`;
+  const blackBgText=showBgb?`BG ${Math.round(bgb)}%`:"";
+  const whiteBgText=showBgw?`BG ${Math.round(bgw)}%`:"";
+  // 勝率・G率・BG率は同一行で、約全角スペース1文字分の等間隔に配置する。
+  els.blackGammonText.textContent=blackGText;
+  els.whiteGammonText.textContent=whiteGText;
+  if(els.blackBackgammonText)els.blackBackgammonText.textContent=blackBgText;
+  if(els.whiteBackgammonText)els.whiteBackgammonText.textContent=whiteBgText;
+  renderBigComeback(s);
+  renderAchievements(s);
+  renderBoardDimOverlay(s);
+  els.blackHistoryName.classList.toggle("active-turn",s.activePlayer===1);
+  els.whiteHistoryName.classList.toggle("active-turn",s.activePlayer===-1);
+  drawPointLabels(s.activePlayer);drawPipInfo(s.position);renderAnimatedCheckers(s);drawDice(s.dice,s.activePlayer,{luckKind:s.luckKind||null,muted:Boolean(s.diceMuted),comeback:s.phase==="roll"&&s.rollNotice==="comeback"});drawCube(s.cube,s);drawGameOverlay(s);renderHistory();renderAnalysis(s.analysis);
+}
+
+async function fetchManifest(){try{const u=new URL("./matches/manifest.json",location.href);u.searchParams.set("t",Date.now());const r=await fetch(u,{cache:"no-store"});return r.ok?await r.json():{};}catch{return {};}}
+async function loadMatch(file,{force=false,resetIndex=false}={}){
+  if(!file){
+    resetCubeMotion();
+    loadedMatchFile="";
+    matchData={states:[emptyState]};
+    index=0;
+    if(!isLocal()){
+      pagesState.index=0;
+      pagesState.totalSteps=1;
+      publishPagesState();
+    }
+    render();
+    return true;
+  }
+  if(!force && file===loadedMatchFile && matchData.states.length>1) return true;
+  try{
+    let url;
+    if(isLocal()) url=`/api/match?file=${encodeURIComponent(file)}&t=${Date.now()}`;
+    else{
+      const m=await fetchManifest();
+      const rel=m.generated?.[file]||(/\.xg$/i.test(file)?`generated/${file}.json`:file);
+      url=new URL(`./matches/${rel}`,location.href);
+      url.searchParams.set("t",Date.now());
+      url=url.toString();
+    }
+    const r=await fetch(url,{cache:"no-store"});
+    if(!r.ok) throw new Error(`HTTP ${r.status}`);
+    const data=await r.json();
+    if(!Array.isArray(data.states)||!data.states.length) throw new Error("No replay states");
+    const cubeMatchChanged=file!==loadedMatchFile;
+    if(cubeMatchChanged) resetCubeMotion();
+    matchData=data;
+    loadedMatchFile=file;
+    if(resetIndex) index=0;
+    index=Math.max(0,Math.min(index,data.states.length-1));
+    if(!isLocal()){
+      pagesState.totalSteps=data.states.length;
+      pagesState.index=index;
+      publishPagesState();
+    }
+    render();
+    return true;
+  }catch(error){
+    console.error("Failed to load match",error);
+    resetCubeMotion();
+    loadedMatchFile="";
+    matchData={states:[emptyState]};
+    index=0;
+    if(!isLocal()){
+      pagesState.index=0;
+      pagesState.totalSteps=1;
+      pagesState.playing=false;
+      publishPagesState({matchError:String(error.message||error)});
+    }
+    render();
+    return false;
+  }
+}
+async function applyStateMessage(message){
+  if(typeof message.index==="number") index=message.index;
+  if(message.playbackRate!=null) localPlaybackRate=normalizedPlaybackRate(message.playbackRate);
+  applyPlaybackTiming();
+  const old=meta.matchFile;
+  if(message.meta) meta={...meta,...message.meta};
+  if(meta.matchFile!==old||meta.matchFile!==loadedMatchFile) await loadMatch(meta.matchFile,{force:true,resetIndex:meta.matchFile!==old});
+  render();
+}
+
+function publishPagesState(extra={}){
+  if(isLocal()) return;
+  const payload={type:"state",...pagesState,meta:{...meta},...extra};
+  try{localStorage.setItem("matchReplayPlaybackState",JSON.stringify(payload));}catch{}
+  if(pageChannel) pageChannel.postMessage(payload);
+}
+function playbackDelayForIndex(i){
+  const state=matchData.states[Math.max(0,Math.min(Number(i)||0,matchData.states.length-1))];
+  if(state?.phase==="gameEnd" || state?.phase==="matchStart" || state?.phase==="matchEnd") return scaledSequenceDelay(SCORE_SEQUENCE_SPEED);
+  if(state?.phase==="bigComebackIntro") return scaledSequenceDelay(BIG_COMEBACK_DIM_SPEED);
+  if(state?.phase==="preRoll") return scaledSequenceDelay(PRE_ROLL_SPEED);
+  if(["cubeOffer","cubeOfferSelect","cubeResponse","cubeResponseSelect"].includes(state?.phase)) return scaledSequenceDelay(CUBE_SPEED);
+  const segments=Array.isArray(state?.moveAnimation?.segments)?state.moveAnimation.segments:[];
+  if(state?.phase==="roll"&&state?.noContactCombined){
+    const hitCount=segments.reduce((n,s)=>n+(s?.hit?1:0),0);
+    const animationMs=segments.length?(segments.length+hitCount)*checkerMoveDuration()+250/currentPlaybackRate():0;
+    return Math.max(scaledSequenceDelay(ROLL_SPEED),animationMs);
+  }
+  if(state?.phase==="roll") return scaledSequenceDelay(ROLL_SPEED);
+  const hitCount=segments.reduce((n,s)=>n+(s?.hit?1:0),0);
+  const animationMs=segments.length?(segments.length+hitCount)*checkerMoveDuration()+250/currentPlaybackRate():0;
+  if(state?.phase==="analysis" || (state?.phase==="candidates"&&state?.forcedMove)){
+    return Math.max(scaledSequenceDelay(MOVE_SPEED),animationMs);
+  }
+  if(state?.phase==="candidates") return scaledSequenceDelay(CANDIDATE_SPEED);
+  if(segments.length) return Math.max(scaledSequenceDelay(PLAYBACK_SPEED),animationMs);
+  return scaledSequenceDelay(PLAYBACK_SPEED);
+}
+function stopPagesTimer(){if(pagesTimer){clearTimeout(pagesTimer);pagesTimer=null;}}
+function startPagesTimer(){
+  stopPagesTimer();
+  if(!pagesState.playing || pagesState.mode!=="auto") return;
+  pagesTimer=setTimeout(()=>{
+    pagesTimer=null;
+    const last=Math.max(0,pagesState.totalSteps-1);
+    if(pagesState.index>=last){
+      pagesState.index=last;pagesState.playing=false;publishPagesState();return;
+    }
+    pagesState.index+=1;index=pagesState.index;render();publishPagesState();
+    startPagesTimer();
+  },playbackDelayForIndex(pagesState.index));
+}
+function handlePagesCommand(command,value){
+  switch(command){
+    case "setMode":
+      pagesState.mode=value==="manual"?"manual":"auto";
+      pagesState.playing=false;stopPagesTimer();
+      break;
+    case "play":
+      if(pagesState.mode==="auto"){pagesState.playing=true;startPagesTimer();}
+      break;
+    case "pause": pagesState.playing=false;stopPagesTimer();break;
+    case "prev": pagesState.playing=false;stopPagesTimer();pagesState.index=Math.max(0,pagesState.index-1);break;
+    case "next": pagesState.playing=false;stopPagesTimer();pagesState.index=Math.min(Math.max(0,pagesState.totalSteps-1),pagesState.index+1);break;
+    case "seek": pagesState.playing=false;stopPagesTimer();pagesState.index=Math.max(0,Math.min(Math.max(0,pagesState.totalSteps-1),Number(value)||0));break;
+    case "speed":
+      pagesState.playbackRate=normalizedPlaybackRate(value);
+      pagesState.speed=scaledSequenceDelay(PLAYBACK_SPEED);
+      applyPlaybackTiming();
+      if(pagesState.playing&&pagesState.mode==="auto")startPagesTimer();
+      break;
+  }
+  pagesState.speed=scaledSequenceDelay(PLAYBACK_SPEED);
+  index=pagesState.index;render();publishPagesState();
+}
+
+async function applyPagesMeta(nextMeta,{force=false}={}){
+  if(isLocal()||!nextMeta||typeof nextMeta!=="object") return;
+  const oldFile=meta.matchFile;
+  meta={...meta,...nextMeta};
+  const fileChanged=meta.matchFile!==oldFile;
+  if(force||fileChanged||meta.matchFile!==loadedMatchFile){
+    await loadMatch(meta.matchFile,{force:true,resetIndex:fileChanged});
+  }
+  if(fileChanged){
+    pagesState.index=0;
+    index=0;
+  }
+  render();
+  publishPagesState();
+}
+
+function startPagesMetaPolling(){
+  if(isLocal()||pagesMetaPoller) return;
+  try{pagesMetaRevision=localStorage.getItem("matchReplayMetaRevision")||"";}catch{}
+  pagesMetaPoller=setInterval(async()=>{
+    try{
+      const revision=localStorage.getItem("matchReplayMetaRevision")||"";
+      if(!revision||revision===pagesMetaRevision) return;
+      pagesMetaRevision=revision;
+      const raw=localStorage.getItem("matchReplayMeta");
+      if(!raw) return;
+      await applyPagesMeta(JSON.parse(raw),{force:true});
+    }catch(error){
+      console.warn("Failed to synchronize display settings",error);
+    }
+  },300);
+}
+
+async function loadInitialPagesMeta(){
+  if(isLocal())return;
+  try{const r=await fetch(new URL("./stream-config.json",location.href),{cache:"no-store"});if(r.ok)meta={...meta,...await r.json()};}catch{}
+  try{const s=localStorage.getItem("matchReplayMeta");if(s)meta={...meta,...JSON.parse(s)};pagesMetaRevision=localStorage.getItem("matchReplayMetaRevision")||"";}catch{}
+  try{const s=localStorage.getItem("matchReplayPlaybackState");if(s){const p=JSON.parse(s);pagesState={...pagesState,...p};index=Number(p.index)||0;}}catch{}
+  pagesState.playbackRate=normalizedPlaybackRate(pagesState.playbackRate);
+  pagesState.speed=scaledSequenceDelay(PLAYBACK_SPEED);
+  applyPlaybackTiming();
+  await loadMatch(meta.matchFile,{force:true});
+  pagesState.index=Math.max(0,Math.min(index,pagesState.totalSteps-1));
+  index=pagesState.index;
+  render();publishPagesState();
+}
+function connectWebSocket(){
+  if(!isLocal())return;const protocol=location.protocol==="https:"?"wss:":"ws:";socket=new WebSocket(`${protocol}//${location.host}/ws`);
+  socket.addEventListener("open",()=>socket.send(JSON.stringify({type:"hello",role:"display"})));
+  socket.addEventListener("message",async e=>{try{const m=JSON.parse(e.data);if(m.type==="state")await applyStateMessage(m);}catch(err){console.warn(err);}});
+  socket.addEventListener("close",()=>setTimeout(connectWebSocket,1500));
+}
+if(pageChannel)pageChannel.addEventListener("message",async e=>{
+  const m=e.data||{};
+  if(m.type==="meta"){
+    if(m.revision) pagesMetaRevision=String(m.revision);
+    await applyPagesMeta(m.meta,{force:true});
+  }else if(m.type==="command"){
+    handlePagesCommand(m.command,m.value);
+  }else if(m.type==="state-request"){
+    publishPagesState();
+  }
+});
+addEventListener("storage",async e=>{
+  if(isLocal()) return;
+  try{
+    if(e.key==="matchReplayMetaRevision"){
+      pagesMetaRevision=e.newValue||"";
+      const raw=localStorage.getItem("matchReplayMeta");
+      if(raw) await applyPagesMeta(JSON.parse(raw),{force:true});
+    }else if(e.key==="matchReplayMeta"&&e.newValue){
+      await applyPagesMeta(JSON.parse(e.newValue),{force:true});
+    }
+  }catch(error){console.warn("Failed to synchronize display settings",error);}
+});
+
+async function loadAds(){
+  try{let r;if(isLocal())r=await fetch("/api/ads",{cache:"no-store"});else{const u=new URL("./ads/manifest.json",location.href);u.searchParams.set("t",Date.now());r=await fetch(u,{cache:"no-store"});}const d=await r.json();adFiles=Array.isArray(d.files)?d.files:[];}catch{adFiles=[];}
+}
+function setAdImage(el,file){
+  if(!file){el.hidden=true;el.removeAttribute("src");return;}
+  el.src=`./ads/${encodeURIComponent(file)}`;el.hidden=false;
+}
+async function cycleAds(){
+  await loadAds();
+  if(!adFiles.length){setAdImage(els.adImage1,null);setAdImage(els.adImage2,null);return;}
+  const first=adFiles[adIndex%adFiles.length];
+  const second=adFiles.length>1?adFiles[(adIndex+1)%adFiles.length]:null;
+  setAdImage(els.adImage1,first);setAdImage(els.adImage2,second);
+  adIndex=(adIndex+2)%adFiles.length;
+}
+function startAdRotation(){if(adTimer)clearInterval(adTimer);cycleAds();adTimer=setInterval(cycleAds,60000);}
+function dispatchDisplayPlaybackCommand(command,value){
+  if(isLocal()){
+    if(socket?.readyState===WebSocket.OPEN)socket.send(JSON.stringify({type:"command",command,value}));
+    return;
+  }
+  handlePagesCommand(command,value);
+}
+function startDisplayAutoPlayback(rate){
+  dispatchDisplayPlaybackCommand("setMode","auto");
+  dispatchDisplayPlaybackCommand("speed",rate);
+  dispatchDisplayPlaybackCommand("play");
+}
+function stepDisplayPlayback(direction){
+  dispatchDisplayPlaybackCommand("setMode","manual");
+  dispatchDisplayPlaybackCommand(direction);
+}
+addEventListener("keydown",event=>{
+  if(event.ctrlKey||event.metaKey||event.altKey)return;
+  const target=event.target;
+  if(target&&/^(INPUT|TEXTAREA|SELECT|BUTTON)$/.test(target.tagName))return;
+  const key=event.key;
+  if(/^[1-9]$/.test(key)){event.preventDefault();startDisplayAutoPlayback(Number(key));return;}
+  if(key==="ArrowLeft"){event.preventDefault();stepDisplayPlayback("prev");return;}
+  if(key==="ArrowRight"){event.preventDefault();stepDisplayPlayback("next");return;}
+  if(key===" "||event.code==="Space"){event.preventDefault();dispatchDisplayPlaybackCommand("pause");}
+});
+function scaleStage(){const vw=document.documentElement.clientWidth||innerWidth||1920,s=vw/1920;els.stage.style.transform=`scale(${s})`;els.stageWrap.style.height=`${Math.ceil(1080*s)}px`;}
+addEventListener("resize",scaleStage);scaleStage();applyPlaybackTiming();render();loadDesignPresets();startAdRotation();loadInitialPagesMeta();startPagesMetaPolling();connectWebSocket();

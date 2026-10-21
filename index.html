@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Backgammon Match Replay</title>
+<link rel="stylesheet" href="./styles.css?v=213">
+</head>
+<body>
+<div id="stage-wrap">
+  <main id="stage" aria-label="1920 by 1080 stream layout">
+    <section class="top-area">
+      <div class="headline-row">
+        <div class="headline-name left" id="blackName">柳 暢祐</div>
+
+        <div class="headline-title-block">
+          <div class="headline-title-main" id="tournamentTitleLine1">JBS第31期名人戦 準々決勝</div>
+        </div>
+
+        <div class="headline-name right" id="whiteName">平林 直</div>
+      </div>
+
+      <div class="scorebar-row">
+        <div class="score-card">
+          <div class="score-value" id="blackScore">０</div>
+        </div>
+
+        <div class="eval-wrap">
+          <div class="winrate-bar">
+            <div id="winBarBlack" class="winrate-fill black" style="width:50%"></div>
+            <div id="winBarWhite" class="winrate-fill white" style="width:50%"></div>
+            <div id="gammonBarBlack" class="gammon-fill black" style="width:0%"></div>
+            <div id="gammonBarWhite" class="gammon-fill white" style="width:0%"></div>
+            <div id="backgammonBarBlack" class="backgammon-fill black" style="width:0%"></div>
+            <div id="backgammonBarWhite" class="backgammon-fill white" style="width:0%"></div>
+            <div class="bar-stats bar-stats-left">
+              <div id="blackRateText" class="bar-rate">50<span class="bar-rate-percent">%</span></div>
+              <div id="blackGammonText" class="bar-gammon-rate">G 0%</div>
+              <div id="blackBackgammonText" class="bar-backgammon-rate"></div>
+            </div>
+            <div class="bar-stats bar-stats-right">
+              <div id="whiteRateText" class="bar-rate">50<span class="bar-rate-percent">%</span></div>
+              <div id="whiteGammonText" class="bar-gammon-rate">G 0%</div>
+              <div id="whiteBackgammonText" class="bar-backgammon-rate"></div>
+            </div>
+            <div class="winrate-guide" style="left:30%" aria-hidden="true"><span class="guide-spike top"></span><span class="guide-spike bottom"></span></div>
+            <div class="winrate-guide" style="left:50%" aria-hidden="true"><span class="guide-spike top"></span><span class="guide-spike bottom"></span></div>
+            <div class="winrate-guide" style="left:70%" aria-hidden="true"><span class="guide-spike top"></span><span class="guide-spike bottom"></span></div>
+            <div id="bigComebackText" class="big-comeback" aria-hidden="true">大逆転！</div>
+          </div>
+        </div>
+
+        <div class="score-card">
+          <div class="score-value" id="whiteScore">０</div>
+        </div>
+
+        <div class="match-note" id="tournamentTitleLine2">2025-08-30　25ポイントマッチ　勝てばベスト4</div>
+      </div>
+    </section>
+
+    <section class="main-area">
+      <section class="board-area">
+        <svg id="board" viewBox="0 0 702 546" role="img" aria-label="Backgammon board">
+          <rect width="702" height="546" fill="#ffffff"/>
+          <g id="boardBase" stroke="#000000" stroke-linejoin="round">
+            <rect x="11" y="28" width="680" height="490" fill="#ffffff" stroke-width="4"/>
+            <line x1="58.5" y1="28" x2="58.5" y2="518" stroke-width="4"/>
+            <line x1="326.5" y1="28" x2="326.5" y2="518" stroke-width="4"/>
+            <line x1="374.5" y1="28" x2="374.5" y2="518" stroke-width="4"/>
+            <line x1="644.5" y1="28" x2="644.5" y2="518" stroke-width="4"/>
+            <rect x="10.5" y="247" width="48" height="53" fill="#000000" stroke-width="0"/>
+            <rect x="645.5" y="247" width="46" height="53" fill="#000000" stroke-width="0"/>
+          </g>
+          <g id="points"></g>
+          <g id="pointLabels"></g>
+          <g id="checkers"></g>
+          <g id="dice"></g>
+          <g id="cube"></g>
+          <g id="boardFrameOverlay" stroke-linejoin="round" pointer-events="none" aria-hidden="true">
+            <rect class="board-frame-outline" x="11" y="28" width="680" height="490" fill="none" stroke-width="4"/>
+            <line x1="58.5" y1="28" x2="58.5" y2="518" stroke-width="4"/>
+            <line x1="326.5" y1="28" x2="326.5" y2="518" stroke-width="4"/>
+            <line x1="374.5" y1="28" x2="374.5" y2="518" stroke-width="4"/>
+            <line x1="644.5" y1="28" x2="644.5" y2="518" stroke-width="4"/>
+            <rect class="board-frame-fill" x="10.5" y="247" width="48" height="53" stroke-width="0"/>
+            <rect class="board-frame-fill" x="645.5" y="247" width="46" height="53" stroke-width="0"/>
+          </g>
+        </svg>
+        <div id="achievementOverlay" class="achievement-overlay" aria-hidden="true"></div>
+        <div id="boardDimOverlay" class="board-dim-overlay" aria-hidden="true"></div>
+      </section>
+
+      <aside class="info-area">
+        <section class="history-area">
+          <div class="history-name-row">
+            <div class="history-player-name" id="blackHistoryName">柳 暢祐</div>
+            <div class="history-player-name" id="whiteHistoryName">平林 直</div>
+          </div>
+          <div class="history-list" id="historyList"></div>
+        </section>
+
+        <section class="analysis-area">
+          <div id="analysisContent" class="analysis-content"></div>
+        </section>
+
+        <section class="ad-area">
+          <div class="ad-grid">
+            <div class="ad-frame">
+              <img id="adImage1" alt="advertisement 1" hidden>
+            </div>
+            <div class="ad-frame">
+              <img id="adImage2" alt="advertisement 2" hidden>
+            </div>
+          </div>
+        </section>
+      </aside>
+    </section>
+  </main>
+</div>
+<script src="./app.js?v=217"></script>
+</body>
+</html>
