@@ -52,6 +52,7 @@ let lastState = {
     whiteScore:0,
     matchFile:"",
     themeColor:"#000000",
+    themeBrandId:"",
     designPreset:"green",
     designOverrides:{}
   }
@@ -64,6 +65,7 @@ let remainingAnchorMs=0;
 let remainingAnchorAt=performance.now();
 let remainingCounting=false;
 
+let selectedThemeBrandId="";
 let designPresets=[];
 let designOverridesDraft={};
 let selectedDesignKey="board.surface";
@@ -102,7 +104,9 @@ function acceptAppliedMeta(){
 function syncMetaEditorsFromState(){
   syncEditorValue(tournamentLine1Input,"tournamentTitleLine1",lastState.meta.tournamentTitleLine1 || lastState.meta.tournamentTitle || "");
   syncEditorValue(tournamentLine2Input,"tournamentTitleLine2",lastState.meta.tournamentTitleLine2 || "");
-  syncEditorValue(themeColorInput,"themeColor",lastState.meta.themeColor || "#000000");
+  const effectiveTheme=window.JBSReplayBrand?.resolveTheme(lastState.meta);
+  if(!dirtyMetaFields.has("themeBrandId")) selectedThemeBrandId=lastState.meta.themeBrandId||effectiveTheme?.id||"";
+  syncEditorValue(themeColorInput,"themeColor",effectiveTheme?.color || lastState.meta.themeColor || "#000000");
   renderThemeColorPreview();
   syncEditorValue(blackNameInput,"blackName",lastState.meta.blackName || "");
   syncEditorValue(whiteNameInput,"whiteName",lastState.meta.whiteName || "");
@@ -173,21 +177,37 @@ function renderThemeColorPreview(){
   themeColorPreview.querySelectorAll(".theme-color-button").forEach(button=>{
     const color=String(button.dataset.color||"").toUpperCase();
     button.style.background=color;
-    button.classList.toggle("is-selected",color===value);
+    button.style.color=window.JBSReplayBrand?.getTextColor(color) || "#FFFFFF";
+    button.classList.toggle("is-selected", selectedThemeBrandId
+      ? button.dataset.brandId===selectedThemeBrandId : color===value);
   });
 }
 
-const JBS_THEME_BY_TITLE=[
-  // 「日本」は協会名等にも入り得るため、固有タイトルを優先して最後に判定する。
-  {keywords:["盤聖戦","盤聖"],color:"#6B0D2F"},
-  {keywords:["名人戦","名人"],color:"#6B670D"},
-  {keywords:["王位戦","王位"],color:"#0D6B2F"},
-  {keywords:["賽王戦","賽王"],color:"#0D236B"},
-  {keywords:["棋聖戦","棋聖"],color:"#6B230D"},
-  {keywords:["女王戦","女王"],color:"#6B0D5B"},
-  {keywords:["新鋭戦","新鋭"],color:"#0D676B"},
-  {keywords:["日本選手権","日本"],color:"#3C3C3C"}
-];
+function renderThemePresetButtons(){
+  if(!themeColorPreview)return;
+  const brand=window.JBSReplayBrand;
+  const tournaments=brand?.getTournaments()||[];
+  themeColorPreview.replaceChildren();
+  themeColorPreview.style.setProperty("--theme-preset-columns",String(tournaments.length||8));
+  for(const item of tournaments){
+    const button=document.createElement("button");
+    button.type="button";
+    button.className="theme-color-button";
+    button.dataset.brandId=item.id;
+    button.dataset.color=item.color;
+    button.textContent=item.name.replace(/戦$/,'').replace(/選手権$/,'').replace(/オープン$/,'');
+    button.title=`${item.name} ${item.color}`;
+    button.setAttribute("aria-label",`${item.name} ${item.color}`);
+    themeColorPreview.appendChild(button);
+  }
+  renderThemeColorPreview();
+}
+async function loadBrandThemes(){
+  if(window.JBSReplayBrand)await window.JBSReplayBrand.load();
+  renderThemePresetButtons();
+  // commonで変更されたテーマ色を、保存済みのブランドIDから最新値に戻す。
+  syncMetaEditorsFromState();
+}
 function decodeMatchFilenameForTheme(filename){
   return String(filename||"").replace(/#U([0-9a-fA-F]{4})/g,(_,hex)=>String.fromCharCode(parseInt(hex,16)));
 }
@@ -221,16 +241,13 @@ function applyAutoMetaFromMatchFile(filename){
   lastState.meta={...lastState.meta,...parsed};
   return true;
 }
-function autoThemeColorForMatchFile(filename){
-  const decoded=decodeMatchFilenameForTheme(filename);
-  const rule=JBS_THEME_BY_TITLE.find(item=>item.keywords.some(keyword=>decoded.includes(keyword)));
-  return rule?.color||null;
-}
 function applyAutoThemeFromMatchFile(filename){
-  const color=autoThemeColorForMatchFile(filename);
-  if(!color||!themeColorInput)return false;
-  themeColorInput.value=color;
+  const entry=window.JBSReplayBrand?.matchTournament(decodeMatchFilenameForTheme(filename));
+  if(!entry||!themeColorInput)return false;
+  themeColorInput.value=entry.color;
+  selectedThemeBrandId=entry.id;
   dirtyMetaFields.add("themeColor");
+  dirtyMetaFields.add("themeBrandId");
   renderThemeColorPreview();
   return true;
 }
@@ -653,6 +670,7 @@ async function applyMeta(){
     tournamentTitleLine1: tournamentLine1Input.value.trim(),
     tournamentTitleLine2: tournamentLine2Input.value.trim(),
     themeColor: themeColorInput.value.trim() || "#000000",
+    themeBrandId: selectedThemeBrandId,
     designPreset: designPresetSelect.value || "green",
     designOverrides: normalizeDesignOverridesObject(designOverridesDraft),
     blackName: blackNameInput.value.trim(),
@@ -864,13 +882,20 @@ document.addEventListener("keydown",event=>{
 });
 window.addEventListener("resize",closeDesignColorEditor);
 window.addEventListener("scroll",closeDesignColorEditor,true);
-themeColorInput.addEventListener("input", renderThemeColorPreview);
-themeColorPreview?.querySelectorAll(".theme-color-button").forEach(button=>{
-  button.addEventListener("click",()=>{
-    themeColorInput.value=String(button.dataset.color||"").toUpperCase();
-    dirtyMetaFields.add("themeColor");
-    renderThemeColorPreview();
-  });
+themeColorInput.addEventListener("input",()=>{
+  // Direct HEX editing changes the theme to a free color, not a common preset.
+  selectedThemeBrandId="";
+  dirtyMetaFields.add("themeBrandId");
+  renderThemeColorPreview();
+});
+themeColorPreview?.addEventListener("click",event=>{
+  const button=event.target.closest(".theme-color-button");
+  if(!button)return;
+  selectedThemeBrandId=button.dataset.brandId||"";
+  themeColorInput.value=String(button.dataset.color||"").toUpperCase();
+  dirtyMetaFields.add("themeColor");
+  dirtyMetaFields.add("themeBrandId");
+  renderThemeColorPreview();
 });
 matchFileSelect.addEventListener("change",()=>{
   if(matchFileSelect.value){
@@ -917,7 +942,8 @@ function installButtonFeedback(){
 installButtonFeedback();
 setInterval(updateRemainingTimeDisplay,250);
 renderState(lastState);
-renderThemeColorPreview();
+renderThemePresetButtons();
+loadBrandThemes();
 loadDesignPresets();
 refreshMatches();
 loadPagesInitialState();

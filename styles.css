@@ -10,6 +10,9 @@
   --text:#111;
   --top-bg:#f3f3ed;
   --theme-color:#000000;
+  --theme-sub-color:#000000;
+  --theme-text-color:#FFFFFF;
+  --theme-text-shadow:0 2px 6px rgba(0,0,0,.56),0 0 1px rgba(0,0,0,.42);
   --checker-player1:#111111;
   --checker-player2:#FFFFFF;
   --die-player1:#111111;
@@ -97,7 +100,7 @@ html,body{
   background:
     radial-gradient(120% 104% at 0% 50%,
       transparent 58%,
-      color-mix(in srgb,var(--theme-color) 60%,#ffffff) 58.15% 64.6%,
+      var(--theme-sub-color) 58.15% 64.6%,
       transparent 64.75%),
     radial-gradient(108% 94% at 0% 52%,
       transparent 67%,
@@ -121,7 +124,7 @@ html,body{
   background:
     radial-gradient(120% 104% at 100% 50%,
       transparent 58%,
-      color-mix(in srgb,var(--theme-color) 60%,#ffffff) 58.15% 64.6%,
+      var(--theme-sub-color) 58.15% 64.6%,
       transparent 64.75%),
     radial-gradient(108% 94% at 100% 52%,
       transparent 67%,
@@ -176,9 +179,9 @@ html,body{
   white-space:nowrap;
   overflow:hidden;
   text-overflow:ellipsis;
-  color:#fff;
+  color:var(--theme-text-color);
   letter-spacing:.012em;
-  text-shadow:0 2px 5px rgba(0,0,0,.52),0 0 1px rgba(0,0,0,.45);
+  text-shadow:var(--theme-text-shadow);
   transform:translateY(12px);
 }
 .headline-name.left{justify-content:flex-start;text-align:left;padding-left:18px;padding-right:0}
@@ -216,8 +219,8 @@ html,body{
   font-weight:900;
   line-height:1.16;
   letter-spacing:.012em;
-  color:#fff;
-  text-shadow:0 2px 6px rgba(0,0,0,.56),0 0 1px rgba(0,0,0,.42);
+  color:var(--theme-text-color);
+  text-shadow:var(--theme-text-shadow);
   white-space:nowrap;
   overflow:hidden;
   text-overflow:ellipsis;
@@ -288,8 +291,8 @@ html,body{
   transform:translateY(-5px);
   line-height:1.1;
   letter-spacing:.015em;
-  color:#fff;
-  text-shadow:0 2px 6px rgba(0,0,0,.58),0 0 1px rgba(0,0,0,.38);
+  color:var(--theme-text-color);
+  text-shadow:var(--theme-text-shadow);
   white-space:nowrap;
   overflow:hidden;
   text-overflow:ellipsis;

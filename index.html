@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>自動棋譜配信システム</title>
-<link rel="stylesheet" href="./control.css?v=217">
+<link rel="stylesheet" href="./control.css?v=102">
 </head>
 <body>
 <main class="control-shell">
@@ -82,14 +82,7 @@
           <span id="themeColorSwatch" class="theme-color-swatch" aria-label="入力中のテーマカラー"></span>
         </div>
         <div id="themeColorPreview" class="theme-color-preview" aria-label="テーマカラーのプリセット">
-          <button type="button" class="theme-color-button" data-color="#3C3C3C" aria-label="日本 #3C3C3C">日本</button>
-          <button type="button" class="theme-color-button" data-color="#6B0D2F" aria-label="盤聖 #6B0D2F">盤聖</button>
-          <button type="button" class="theme-color-button" data-color="#6B670D" aria-label="名人 #6B670D">名人</button>
-          <button type="button" class="theme-color-button" data-color="#0D6B2F" aria-label="王位 #0D6B2F">王位</button>
-          <button type="button" class="theme-color-button" data-color="#0D236B" aria-label="賽王 #0D236B">賽王</button>
-          <button type="button" class="theme-color-button" data-color="#6B230D" aria-label="棋聖 #6B230D">棋聖</button>
-          <button type="button" class="theme-color-button" data-color="#6B0D5B" aria-label="女王 #6B0D5B">女王</button>
-          <button type="button" class="theme-color-button" data-color="#0D676B" aria-label="新鋭 #0D676B">新鋭</button>
+          <!-- common/brand.json からブランドカラーを生成します（通信失敗時はJSの控えを使用）。 -->
         </div>
       </label>
       <label>
@@ -121,6 +114,7 @@
     </div>
   </section>
 </main>
-<script src="./control.js?v=217"></script>
+<script src="./brand-theme.js?v=102"></script>
+<script src="./control.js?v=102"></script>
 </body>
 </html>

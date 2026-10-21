@@ -22,7 +22,7 @@ let lastCubeVisualTarget=null;
 const defaultMeta={
   tournamentTitleLine1:"",
   tournamentTitleLine2:"",
-  blackName:"",whiteName:"",blackScore:0,whiteScore:0,matchFile:"",themeColor:"#000000",designPreset:"green",designOverrides:{}
+  blackName:"",whiteName:"",blackScore:0,whiteScore:0,matchFile:"",themeColor:"#000000",themeBrandId:"",designPreset:"green",designOverrides:{}
 };
 const standardPoints=[0,-2,0,0,0,0,5,0,3,0,0,0,-5,5,0,0,0,-3,0,-5,0,0,0,0,2];
 const emptyState={
@@ -735,7 +735,15 @@ function renderHistoryHeader(el,prValue,nameText){
   if(parts.name)parts.name.textContent=nameText||'';
 }
 function renderMeta(state){
-  document.documentElement.style.setProperty("--theme-color",normalizeThemeColor(meta.themeColor));
+  const brand=window.JBSReplayBrand;
+  const theme=brand?.resolveTheme(meta);
+  const color=normalizeThemeColor(theme?.color||meta.themeColor);
+  const themeTextColor=brand?.getTextColor(color) || "#FFFFFF";
+  document.documentElement.style.setProperty("--theme-color",color);
+  document.documentElement.style.setProperty("--theme-sub-color",theme?.subColor||color);
+  document.documentElement.style.setProperty("--theme-text-color",themeTextColor);
+  document.documentElement.style.setProperty("--theme-text-shadow",themeTextColor.toUpperCase()==="#000000"
+    ? "0 1px 3px rgba(255,255,255,.26)" : "0 2px 6px rgba(0,0,0,.56),0 0 1px rgba(0,0,0,.42)");
   applyDesignPreset(meta.designPreset||"green",meta.designOverrides);
   els.tournamentTitleLine1.textContent=meta.tournamentTitleLine1;
   els.tournamentTitleLine2.textContent=meta.tournamentTitleLine2||"";
@@ -1600,3 +1608,4 @@ addEventListener("keydown",event=>{
 });
 function scaleStage(){const vw=document.documentElement.clientWidth||innerWidth||1920,s=vw/1920;els.stage.style.transform=`scale(${s})`;els.stageWrap.style.height=`${Math.ceil(1080*s)}px`;}
 addEventListener("resize",scaleStage);scaleStage();applyPlaybackTiming();render();loadDesignPresets();startAdRotation();loadInitialPagesMeta();startPagesMetaPolling();connectWebSocket();
+window.JBSReplayBrand?.load().then(()=>render()).catch(error=>console.warn("Brand render failed",error));
